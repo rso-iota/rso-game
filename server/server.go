@@ -4,43 +4,34 @@ import (
 	"encoding/json"
 	"net/http"
 	"rso-iota/game"
-
-	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
-func serveStatic(w http.ResponseWriter, r *http.Request) {
+func serveStaticPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
-func websocketHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)
-	}
-
-	game.HandleConnection(conn)
+// Janky jank
+func serveScript(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "script.js")
 }
 
 func newGameHandler(w http.ResponseWriter, r *http.Request) {
-	Lobby := game.CreateLobby()
+	game := game.CreateGame()
 
-	w.Write([]byte(Lobby.ID))
+	w.Write([]byte(game.ID))
 }
 
 func gameListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game.RunningLobbyIDs())
+	json.NewEncoder(w).Encode(game.RunningGameIDs())
 }
 
 func Start() {
 	http.HandleFunc("/list", gameListHandler)
 	http.HandleFunc("/new", newGameHandler)
-	http.HandleFunc("/connect", websocketHandler)
-	http.HandleFunc("/", serveStatic)
+	http.HandleFunc("/connect/{gameID}", game.HandleNewConnection)
+	http.HandleFunc("/script.js", serveScript)
+	http.HandleFunc("/", serveStaticPage)
+
 	http.ListenAndServe(":8080", nil)
 }
