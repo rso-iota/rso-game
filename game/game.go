@@ -139,9 +139,6 @@ func (g *Game) loop(time time.Time) {
 		g.food[foodInd] = food
 		updatedFood[i] = food
 	}
-	if len(updatedFood) > 0 {
-		fmt.Println("Updated food", updatedFood, foodsToChange)
-	}
 
 	// Check for collisions with other players
 	for player, playerData := range g.players {

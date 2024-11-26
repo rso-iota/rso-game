@@ -9,5 +9,8 @@ func main() {
 	l := game.CreateGame() // Za testiranje
 	go l.Run()
 
+	l = game.CreateGame() // Za testiranje
+	go l.Run()
+
 	server.Start()
 }

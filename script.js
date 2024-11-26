@@ -1,4 +1,4 @@
-const button = document.querySelector("button");
+const buttons = document.getElementById("buttons");
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -51,21 +51,30 @@ const handleMessage = (msg) => {
     console.log(message)
 };
 
-button.addEventListener("click", async () => {
-    const avaiableGames = await fetch("http://localhost:8080/list").then(
-        (res) => res.json()
-    );
+fetch("http://localhost:8080/list").then(
+    async (res) => {
+        const games = await res.json();
+        console.log(games);
+        for (const game of games) {
+            const button = document.createElement("button");
+            button.innerText = game;
+            button.addEventListener("click", async () => {
+                if (ws !== undefined) {
+                    ws.close();
+                }
 
-    if (ws !== undefined) {
-        ws.close();
+                ws = new WebSocket("ws://localhost:8080/connect/" + game);
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({ type: "join", data: { playerName } }));
+                };
+                ws.onmessage = handleMessage;
+            });
+            buttons.appendChild(button);
+        }
     }
+);
 
-    ws = new WebSocket("ws://localhost:8080/connect/" + avaiableGames[0]);
-    ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "join", data: { playerName } }));
-    };
-    ws.onmessage = handleMessage;
-});
+
 
 const keyPressed = {};
 
