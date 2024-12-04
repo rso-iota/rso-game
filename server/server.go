@@ -7,12 +7,12 @@ import (
 )
 
 func serveStaticPage(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "index.html")
+	http.ServeFile(w, r, "public/index.html")
 }
 
 // Janky jank
 func serveScript(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "script.js")
+	http.ServeFile(w, r, "public/script.js")
 }
 
 func newGameHandler(w http.ResponseWriter, r *http.Request) {
