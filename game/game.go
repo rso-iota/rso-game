@@ -273,7 +273,7 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGame() *Game {
+func CreateGame() string {
 	id := uuid.New().String()
 	food := make([]Food, NUM_FOOD)
 	for i := 0; i < NUM_FOOD; i++ {
@@ -298,9 +298,10 @@ func CreateGame() *Game {
 	}
 	runningGames[id] = game
 
+	go game.Run()
 	println("There are now", len(runningGames), "running games")
 
-	return game
+	return id
 }
 
 func RunningGameIDs() []string {

@@ -1,0 +1,3 @@
+[submodule "rso-comms"]
+	path = rso-comms
+	url = git@github.com:rso-iota/rso-comms.git

@@ -6,11 +6,8 @@ import (
 )
 
 func main() {
-	l := game.CreateGame() // Za testiranje
-	go l.Run()
-
-	l = game.CreateGame() // Za testiranje
-	go l.Run()
+	game.CreateGame() // Za testiranje
+	game.CreateGame() // Za testiranje
 
 	server.Start()
 }

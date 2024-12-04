@@ -2,11 +2,8 @@ FROM golang:1.23 AS build
 
 WORKDIR /rso-game
 
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY ./ ./
-
+RUN go mod download
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /game_service
 

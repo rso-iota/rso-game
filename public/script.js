@@ -48,13 +48,11 @@ const handleMessage = (msg) => {
             delete otherPlayers[message.data.playerName];
             break;
     }
-    console.log(message)
 };
 
 fetch("http://localhost:8080/list").then(
     async (res) => {
         const games = await res.json();
-        console.log(games);
         for (const game of games) {
             const button = document.createElement("button");
             button.innerText = game;
