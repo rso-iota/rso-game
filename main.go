@@ -1,8 +1,8 @@
 package main
 
 import (
-	"rso-iota/game"
-	"rso-iota/server"
+	"rso-game/game"
+	"rso-game/server"
 )
 
 func main() {

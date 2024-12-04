@@ -1,4 +1,4 @@
-module rso-iota
+module rso-game
 
 go 1.23.3
 

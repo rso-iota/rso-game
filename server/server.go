@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"rso-iota/game"
+	"rso-game/game"
 )
 
 func serveStaticPage(w http.ResponseWriter, r *http.Request) {
