@@ -12,6 +12,7 @@ FROM gcr.io/distroless/base-debian11 AS release
 WORKDIR /
 
 COPY --from=build /game_service /game_service
+COPY --from=build /rso-game/config.yaml /config.yaml
 COPY --from=build /rso-game/public /public
 
 EXPOSE 8080
