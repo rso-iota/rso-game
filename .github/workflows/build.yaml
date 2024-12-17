@@ -3,10 +3,10 @@ name: Build Game Service
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
 
 jobs:
   build:
