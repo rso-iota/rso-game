@@ -2,13 +2,13 @@ package game
 
 import (
 	"encoding/json"
-	"log"
 	"math"
 	"math/rand/v2"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 var PLAYER_SPEED = 150

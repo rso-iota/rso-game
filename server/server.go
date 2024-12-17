@@ -3,12 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net"
 	"net/http"
 	"rso-game/game"
 
 	pb "rso-game/grpc"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -37,7 +38,7 @@ func serveHTTP(l net.Listener) {
 
 	// Self contained app - for testing
 	if viper.GetBool("testServer") {
-		log.Println("Running in test mode, serving static files")
+		log.Debug("Running in test mode, serving static files")
 		mux.HandleFunc("/script.js", serveScript)
 		mux.HandleFunc("/list", gameListHandler)
 		mux.HandleFunc("/new", newGameHandler)

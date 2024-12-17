@@ -2,3 +2,4 @@ httpPort: 8080
 grpcPort: 8081
 numTestGames: 5
 testServer: true
+logJSON: false
