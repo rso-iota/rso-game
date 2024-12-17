@@ -2,7 +2,7 @@ package game
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
 	"math"
 	"math/rand/v2"
 	"net/http"
@@ -73,11 +73,11 @@ func (g *Game) Run() {
 	for {
 		select {
 		case player := <-g.connect:
-			fmt.Println("Player connected to lobby", g.ID)
+			log.Println("Player connected to lobby", g.ID)
 			g.players[player] = &PlayerData{}
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
-				fmt.Println("Player disconnected from lobby", g.ID)
+				log.Println("Player disconnected from lobby", g.ID)
 				delete(g.players, player)
 				close(player.send)
 
@@ -177,7 +177,7 @@ func (g *Game) loop(time time.Time) {
 func (g *Game) broadcast(message interface{}) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		fmt.Println("Error marshalling message", err)
+		log.Println("Error marshalling message", err)
 		return
 	}
 
@@ -189,7 +189,7 @@ func (g *Game) broadcast(message interface{}) {
 func (g *Game) broadcastExcept(message interface{}, except *Player) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		fmt.Println("Error marshalling message", err)
+		log.Println("Error marshalling message", err)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 	var msg Message
 	err := json.Unmarshal(playerMessage.Message, &msg)
 	if err != nil {
-		fmt.Println("Error unmarshalling message", err)
+		log.Println("Error unmarshalling message", err)
 		return
 	}
 
@@ -213,7 +213,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var join JoinMessage
 		err := json.Unmarshal(msg.Data, &join)
 		if err != nil {
-			fmt.Println("Error unmarshalling join message", err)
+			log.Println("Error unmarshalling join message", err)
 			return
 		}
 
@@ -253,7 +253,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var move MoveMessage
 		err := json.Unmarshal(msg.Data, &move)
 		if err != nil {
-			fmt.Println("Error unmarshalling move message", err)
+			log.Println("Error unmarshalling move message", err)
 			return
 		}
 		// sam zadnji move vsak frame je uporabljen
@@ -299,7 +299,7 @@ func CreateGame() string {
 	runningGames[id] = game
 
 	go game.Run()
-	println("There are now", len(runningGames), "running games")
+	log.Println("Creating new game. There are now", len(runningGames), "running games")
 
 	return id
 }

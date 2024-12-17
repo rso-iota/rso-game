@@ -3,17 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"rso-game/game"
 
 	pb "rso-game/grpc"
 
-	"github.com/soheilhy/cmux"
-	"golang.org/x/sync/errgroup"
+	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -32,47 +29,53 @@ func (s *GrpcServer) ListRunningGames(_ context.Context, _ *pb.Empty) (*pb.GameI
 	return &pb.GameIDList{Ids: ids}, nil
 }
 
-func serveHTTP(l net.Listener) error {
+func serveHTTP(l net.Listener) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/connect/{gameID}", game.HandleNewConnection)
 
+	log.Println("Starting HTTP server on port " + viper.GetString("httpPort"))
+
 	// Self contained app - for testing
-	if os.Getenv("DEV") == "true" {
-		fmt.Println("Using the testing server")
+	if viper.GetBool("testServer") {
+		log.Println("Running in test mode, serving static files")
 		mux.HandleFunc("/script.js", serveScript)
 		mux.HandleFunc("/list", gameListHandler)
 		mux.HandleFunc("/new", newGameHandler)
 		mux.HandleFunc("/", serveStaticPage)
 	}
 
-	return http.Serve(l, mux)
+	err := http.Serve(l, mux)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func serveGRPC(l net.Listener) error {
+func serveGRPC(l net.Listener) {
 	grpcServer := grpc.NewServer()
 	pb.RegisterGameServiceServer(grpcServer, &GrpcServer{})
 
 	reflection.Register(grpcServer)
 
-	return grpcServer.Serve(l)
+	log.Println("Starting gRPC server on port " + viper.GetString("grpcPort"))
+	err := grpcServer.Serve(l)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func Start() {
-	lis, err := net.Listen("tcp", ":8080")
+	httpListen, err := net.Listen("tcp", ":"+viper.GetString("httpPort"))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatal(err)
 	}
 
-	m := cmux.New(lis)
-	grpcL := m.Match(cmux.HTTP2())
-	httpL := m.Match(cmux.HTTP1Fast())
+	grpcListen, err := net.Listen("tcp", ":"+viper.GetString("grpcPort"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	g := new(errgroup.Group)
-	g.Go(func() error { return serveGRPC(grpcL) })
-	g.Go(func() error { return serveHTTP(httpL) })
-	g.Go(func() error { return m.Serve() })
-
-	log.Println("run server:", g.Wait())
+	go serveHTTP(httpListen)
+	serveGRPC(grpcListen)
 }
 
 // These are the handlers for the self-contained app, not needed in the cluster
