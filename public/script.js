@@ -50,7 +50,7 @@ const handleMessage = (msg) => {
     }
 };
 
-fetch("http://localhost:8080/list").then(
+fetch("/list").then(
     async (res) => {
         const games = await res.json();
         for (const game of games) {
@@ -60,8 +60,7 @@ fetch("http://localhost:8080/list").then(
                 if (ws !== undefined) {
                     ws.close();
                 }
-
-                ws = new WebSocket("ws://localhost:8080/connect/" + game);
+                ws = new WebSocket(`ws://${window.location.host}${window.location.pathname}connect/${game}`);
                 ws.onopen = () => {
                     ws.send(JSON.stringify({ type: "join", data: { playerName } }));
                 };
