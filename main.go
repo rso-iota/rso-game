@@ -18,7 +18,7 @@ func main() {
 	viper.SetConfigFile("config.yaml")
 	err := viper.ReadInConfig()
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Error("Failed to read config file")
 	}
 
 	if viper.GetBool("logJSON") {
