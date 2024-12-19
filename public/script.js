@@ -58,6 +58,12 @@ fetch(`${window.location.pathname}list`).then(
             button.innerText = game;
             button.addEventListener("click", async () => {
                 if (ws !== undefined) {
+                    for (const playerName in otherPlayers) {
+                        delete otherPlayers[playerName];
+                    }
+                    for (const f in food) {
+                        delete food[f];
+                    }
                     ws.close();
                 }
                 const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -109,7 +115,9 @@ function step(timestamp) {
     }
 
     if (dx !== 0 || dy !== 0) {
-        ws.send(JSON.stringify({ type: "move", data: { x: dx, y: dy } }));
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "move", data: { x: dx, y: dy } }));
+        }
     }
 
     if (player?.alive) {

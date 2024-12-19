@@ -102,7 +102,7 @@ func (g *Game) loop(time time.Time) {
 
 	updatedPlayers := make([]PlayerData, 0, len(g.players))
 	for player, move := range g.moveMessages {
-		if !g.players[player].Alive {
+		if p, ok := g.players[player]; !ok || !p.Alive {
 			continue
 		}
 		playerData := g.players[player]
