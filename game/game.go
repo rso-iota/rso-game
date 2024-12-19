@@ -186,6 +186,16 @@ func (g *Game) broadcast(message interface{}) {
 	}
 }
 
+func (g *Game) sendTo(player *Player, message interface{}) {
+	bytes, err := json.Marshal(message)
+	if err != nil {
+		log.Println("Error marshalling message", err)
+		return
+	}
+
+	player.send <- bytes
+}
+
 func (g *Game) broadcastExcept(message interface{}, except *Player) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
@@ -235,7 +245,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			},
 		}
 
-		g.broadcast(state)
+		g.sendTo(playerMessage.Player, state)
 
 		spawnMsg := SpawnMessage{
 			Type: "spawn",

@@ -60,7 +60,8 @@ fetch(`${window.location.pathname}list`).then(
                 if (ws !== undefined) {
                     ws.close();
                 }
-                ws = new WebSocket(`wss://${window.location.host}${window.location.pathname}connect/${game}`);
+                const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+                ws = new WebSocket(`${protocol}://${window.location.host}${window.location.pathname}connect/${game}`);
                 ws.onopen = () => {
                     ws.send(JSON.stringify({ type: "join", data: { playerName } }));
                 };
