@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"rso-game/config"
 	"rso-game/game"
 
 	pb "rso-game/grpc"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -30,14 +30,14 @@ func (s *GrpcServer) ListRunningGames(_ context.Context, _ *pb.Empty) (*pb.GameI
 	return &pb.GameIDList{Ids: ids}, nil
 }
 
-func serveHTTP(l net.Listener) {
+func serveHTTP(l net.Listener, config config.Config) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/connect/{gameID}", game.HandleNewConnection)
 
-	log.Println("Starting HTTP server on port " + viper.GetString("httpPort"))
+	log.Println("Starting HTTP server on " + l.Addr().String())
 
 	// Self contained app - for testing
-	if viper.GetBool("testServer") {
+	if config.TestServer {
 		log.Debug("Running in test mode, serving static files")
 		mux.HandleFunc("/script.js", serveScript)
 		mux.HandleFunc("/list", gameListHandler)
@@ -57,25 +57,25 @@ func serveGRPC(l net.Listener) {
 
 	reflection.Register(grpcServer)
 
-	log.Println("Starting gRPC server on port " + viper.GetString("grpcPort"))
+	log.Println("Starting gRPC server on " + l.Addr().String())
 	err := grpcServer.Serve(l)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func Start() {
-	httpListen, err := net.Listen("tcp", ":"+viper.GetString("httpPort"))
+func Start(config config.Config) {
+	httpListen, err := net.Listen("tcp", ":"+config.HttpPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	grpcListen, err := net.Listen("tcp", ":"+viper.GetString("grpcPort"))
+	grpcListen, err := net.Listen("tcp", ":"+config.GrpcPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go serveHTTP(httpListen)
+	go serveHTTP(httpListen, config)
 	serveGRPC(grpcListen)
 }
 

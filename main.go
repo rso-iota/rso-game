@@ -1,38 +1,46 @@
 package main
 
 import (
+	"reflect"
+	"rso-game/config"
 	"rso-game/game"
 	"rso-game/server"
 
+	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 func main() {
-	viper.SetDefault("httpPort", "8080")
-	viper.SetDefault("grpcPort", "8081")
-	viper.SetDefault("numTestGames", 0)
-	viper.SetDefault("testServer", false)
-	viper.SetDefault("logJSON", false)
+	godotenv.Load("defaults.env")
 
-	viper.SetConfigFile("config.yaml")
-	err := viper.ReadInConfig()
+	var config config.Config
+	err := env.Parse(&config)
 	if err != nil {
-		log.WithError(err).Error("Failed to read config file")
+		log.WithError(err).Fatal("Failed to parse config")
 	}
 
-	if viper.GetBool("logJSON") {
+	fields := log.Fields{}
+
+	val := reflect.ValueOf(config)
+	for i := 0; i < val.NumField(); i++ {
+		fields[val.Type().Field(i).Name] = val.Field(i).Interface()
+	}
+
+	log.WithFields(fields).Info("Loaded config")
+
+	if config.LogJSON {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 	log.SetLevel(log.DebugLevel)
 
-	testGames := viper.GetInt("numTestGames")
+	testGames := config.NumTestGames
 	if testGames > 0 {
 		log.Debug("Creating test games")
-		for range viper.GetInt("numTestGames") {
+		for range testGames {
 			game.CreateGame()
 		}
 	}
 
-	server.Start()
+	server.Start(config)
 }
