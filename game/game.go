@@ -108,6 +108,11 @@ func (g *Game) loop(time time.Time) {
 		playerData := g.players[player]
 		magnitude := math.Sqrt(float64(move.X*move.X + move.Y*move.Y))
 
+		// Skip movement update if magnitude is 0
+		if magnitude == 0 {
+			continue
+		}
+
 		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
 		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
 
@@ -177,29 +182,41 @@ func (g *Game) loop(time time.Time) {
 func (g *Game) broadcast(message interface{}) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
 	for player := range g.players {
-		player.send <- bytes
+		select {
+		case player.send <- bytes:
+			// Message sent successfully
+		default:
+			// Channel is full, skip this message
+			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+		}
 	}
 }
 
 func (g *Game) sendTo(player *Player, message interface{}) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
-	player.send <- bytes
+	select {
+	case player.send <- bytes:
+		// Message sent successfully
+	default:
+		// Channel is full, skip this message
+		log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+	}
 }
 
 func (g *Game) broadcastExcept(message interface{}, except *Player) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
@@ -207,7 +224,13 @@ func (g *Game) broadcastExcept(message interface{}, except *Player) {
 		if player == except {
 			continue
 		}
-		player.send <- bytes
+		select {
+		case player.send <- bytes:
+			// Message sent successfully
+		default:
+			// Channel is full, skip this message
+			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+		}
 	}
 }
 
@@ -215,7 +238,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 	var msg Message
 	err := json.Unmarshal(playerMessage.Message, &msg)
 	if err != nil {
-		log.Println("Error unmarshalling message", err)
+		log.WithError(err).Error("Error unmarshalling message")
 		return
 	}
 
@@ -223,7 +246,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var join JoinMessage
 		err := json.Unmarshal(msg.Data, &join)
 		if err != nil {
-			log.Println("Error unmarshalling join message", err)
+			log.WithError(err).Error("Error unmarshalling join message")
 			return
 		}
 
@@ -263,13 +286,12 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var move MoveMessage
 		err := json.Unmarshal(msg.Data, &move)
 		if err != nil {
-			log.Println("Error unmarshalling move message", err)
+			log.WithError(err).Error("Error unmarshalling move message")
 			return
 		}
 		// sam zadnji move vsak frame je uporabljen
 		g.moveMessages[playerMessage.Player] = move
 	}
-
 }
 
 func (g *Game) onlinePlayers() []PlayerData {
