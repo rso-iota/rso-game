@@ -27,6 +27,8 @@ type Game struct {
 	moveMessages map[*Player]MoveMessage
 
 	previousTime time.Time
+	botClient    *BotClient
+	minPlayers   int
 }
 
 type PlayerMessage struct {
@@ -53,7 +55,7 @@ type Circle struct {
 
 type GameState struct {
 	Players []PlayerData `json:"players"`
-	Food    []Food       `json:"food"`
+	Food    []Food      `json:"food"`
 }
 
 func (l Circle) overlap(other Circle) bool {
@@ -68,16 +70,31 @@ func (l *Circle) addArea(radius float32) {
 
 var runningGames = make(map[string]*Game)
 
+func (g *Game) manageBots() {
+	if len(g.players) < g.minPlayers {
+		botsNeeded := g.minPlayers - len(g.players)
+		for i := 0; i < botsNeeded; i++ {
+			_, err := g.botClient.CreateBot(g.ID, "medium") // Bot will connect as a player
+			if err != nil {
+				log.WithError(err).Error("Failed to create bot")
+				continue
+			}
+		}
+	}
+}
+
 func (g *Game) Run() {
 	ticker := time.NewTicker(30 * time.Millisecond)
+	botCheckTicker := time.NewTicker(5 * time.Second) // Check for bots every 5 seconds
+
 	for {
 		select {
 		case player := <-g.connect:
-			log.Println("Player connected to lobby", g.ID)
+			log.Printf("Player connected to game %s", g.ID)
 			g.players[player] = &PlayerData{}
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
-				log.Println("Player disconnected from lobby", g.ID)
+				log.Printf("Player disconnected from game %s", g.ID)
 				delete(g.players, player)
 				close(player.send)
 
@@ -90,6 +107,8 @@ func (g *Game) Run() {
 			}
 		case message := <-g.messages_in:
 			g.handleMessage(message)
+		case <-botCheckTicker.C:
+			g.manageBots()
 		case time := <-ticker.C:
 			g.loop(time)
 		}
@@ -154,10 +173,10 @@ func (g *Game) loop(time time.Time) {
 
 			if playerData.Circle.overlap(otherPlayerData.Circle) {
 				if playerData.Circle.Radius > otherPlayerData.Circle.Radius {
-					playerData.Circle.Radius += otherPlayerData.Circle.Radius
+					playerData.Circle.addArea(otherPlayerData.Circle.Radius)
 					otherPlayerData.Alive = false
 				} else {
-					otherPlayerData.Circle.Radius += playerData.Circle.Radius
+					otherPlayerData.Circle.addArea(playerData.Circle.Radius)
 					playerData.Alive = false
 				}
 				updatedPlayers = append(updatedPlayers, *playerData)
@@ -289,7 +308,6 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			log.WithError(err).Error("Error unmarshalling move message")
 			return
 		}
-		// sam zadnji move vsak frame je uporabljen
 		g.moveMessages[playerMessage.Player] = move
 	}
 }
@@ -305,7 +323,7 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGame() string {
+func CreateGame(botClient *BotClient, minPlayers int) string {
 	id := uuid.New().String()
 	food := make([]Food, NUM_FOOD)
 	for i := 0; i < NUM_FOOD; i++ {
@@ -327,11 +345,13 @@ func CreateGame() string {
 		messages_in:  make(chan PlayerMessage),
 		moveMessages: make(map[*Player]MoveMessage),
 		previousTime: time.Now(),
+		botClient:    botClient,
+		minPlayers:   minPlayers,
 	}
 	runningGames[id] = game
 
 	go game.Run()
-	log.Println("Creating new game. There are now", len(runningGames), "running games")
+	log.Printf("Creating new game %s. There are now %d running games", id, len(runningGames))
 
 	return id
 }

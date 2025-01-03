@@ -1,9 +1,11 @@
 package config
 
 type Config struct {
-	HttpPort     string `env:"GAME_HTTP_PORT"`
-	GrpcPort     string `env:"GAME_GRPC_PORT"`
-	NumTestGames int    `env:"GAME_NUM_TEST_GAMES"`
-	TestServer   bool   `env:"GAME_TEST_SERVER"`
-	LogJSON      bool   `env:"GAME_LOG_JSON"`
+	HTTPPort     string `env:"GAME_HTTP_PORT" envDefault:"8080"`
+	GRPCPort     string `env:"GAME_GRPC_PORT" envDefault:"8081"`
+	NumTestGames int    `env:"GAME_NUM_TEST_GAMES" envDefault:"4"`
+	TestServer   bool   `env:"GAME_TEST_SERVER" envDefault:"true"`
+	LogJSON      bool   `env:"GAME_LOG_JSON" envDefault:"false"`
+	BotServiceURL string `env:"GAME_BOT_SERVICE_URL" envDefault:"localhost:8082"`
+	MinPlayers   int    `env:"GAME_MIN_PLAYERS" envDefault:"3"`
 }
