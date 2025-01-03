@@ -173,8 +173,9 @@ func (g *Game) loop(time time.Time) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
 
-				nats.Publish("food", []byte(player.PlayerId))
-
+				if nats.Conn != nil {
+					nats.Publish("food", []byte(player.PlayerId))
+				}
 				break
 			}
 		}

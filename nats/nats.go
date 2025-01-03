@@ -5,7 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var conn *nats.Conn
+var Conn *nats.Conn
 
 func Connect(url string) {
 	if url == "" {
@@ -21,11 +21,11 @@ func Connect(url string) {
 	}
 
 	log.Info("Connected to nats at ", url)
-	conn = c
+	Conn = c
 }
 
 func Publish(subject string, data []byte) {
-	err := conn.Publish(subject, data)
+	err := Conn.Publish(subject, data)
 	if err != nil {
 		log.WithError(err).Error("Failed to publish message")
 	}
