@@ -8,9 +8,16 @@ import (
 var conn *nats.Conn
 
 func Connect(url string) {
+	if url == "" {
+		// No NATS server configured, do nothing.
+		log.Info("No nats server configured")
+		return
+	}
+
 	c, err := nats.Connect(url)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to connect to nats")
+		log.WithError(err).Error("Failed to connect to nats")
+		return
 	}
 
 	log.Info("Connected to nats at ", url)

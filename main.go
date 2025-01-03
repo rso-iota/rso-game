@@ -11,29 +11,9 @@ import (
 
 func main() {
 	conf := config.Init()
+	game.SetConfig(&conf)
 
-
-	var config config.Config
-	err := env.Parse(&config)
-	if err != nil {
-		log.WithError(err).Fatal("Failed to parse config")
-	}
-
-	fields := log.Fields{}
-	val := reflect.ValueOf(config)
-	for i := 0; i < val.NumField(); i++ {
-		fields[val.Type().Field(i).Name] = val.Field(i).Interface()
-	}
-	log.WithFields(fields).Info("Loaded config")
-
-	if config.LogJSON {
-		log.SetFormatter(&log.JSONFormatter{})
-	}
 	log.SetLevel(log.DebugLevel)
-
-	game.SetConfig(&config)
-
-	game.SetGlobalConfig(conf)
 
 	testGames := conf.NumTestGames
 	if testGames > 0 {
@@ -44,5 +24,6 @@ func main() {
 	}
 
 	nats.Connect(conf.NatsURL)
+
 	server.Start(conf)
 }
