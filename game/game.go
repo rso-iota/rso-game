@@ -42,6 +42,7 @@ type PlayerMessage struct {
 }
 
 type PlayerData struct {
+	PlayerId   string
 	PlayerName string `json:"playerName"`
 	Alive      bool   `json:"alive"`
 	Circle     Circle `json:"circle"`
@@ -130,7 +131,7 @@ func (g *Game) loop(time time.Time) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
 
-				nats.Publish("food", []byte("food eaten"))
+				nats.Publish("food", []byte(player.PlayerId))
 
 				break
 			}
@@ -238,15 +239,16 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		}
 
 		// Backward compatibility
-		var username string
 		if playerMessage.Player.info == (PlayerInfo{}) {
-			username = join.PlayerName
-		} else {
-			username = playerMessage.Player.info.Username
+			playerMessage.Player.info = PlayerInfo{
+				Username: join.PlayerName,
+				Id:       join.PlayerName,
+			}
 		}
 
 		g.players[playerMessage.Player] = &PlayerData{
-			PlayerName: username,
+			PlayerName: playerMessage.Player.info.Username,
+			PlayerId:   playerMessage.Player.info.Id,
 			Alive:      true,
 			Circle: Circle{
 				X:      rand.Float32() * 800,
