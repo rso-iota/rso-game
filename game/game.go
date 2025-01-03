@@ -5,14 +5,21 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"rso-game/config"
+	"rso-game/nats"
 	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
+var conf config.Config
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
+
+func SetGlobalConfig(c config.Config) {
+	conf = c
+}
 
 type Game struct {
 	ID string
@@ -122,6 +129,9 @@ func (g *Game) loop(time time.Time) {
 			if food.Circle.overlap(player.Circle) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
+
+				nats.Publish("food", []byte("food eaten"))
+
 				break
 			}
 		}
@@ -149,10 +159,10 @@ func (g *Game) loop(time time.Time) {
 
 			if playerData.Circle.overlap(otherPlayerData.Circle) {
 				if playerData.Circle.Radius > otherPlayerData.Circle.Radius {
-					playerData.Circle.Radius += otherPlayerData.Circle.Radius
+					playerData.Circle.addArea(otherPlayerData.Circle.Radius)
 					otherPlayerData.Alive = false
 				} else {
-					otherPlayerData.Circle.Radius += playerData.Circle.Radius
+					otherPlayerData.Circle.addArea(playerData.Circle.Radius)
 					playerData.Alive = false
 				}
 				updatedPlayers = append(updatedPlayers, *playerData)
@@ -227,8 +237,16 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			return
 		}
 
+		// Backward compatibility
+		var username string
+		if playerMessage.Player.info == (PlayerInfo{}) {
+			username = join.PlayerName
+		} else {
+			username = playerMessage.Player.info.Username
+		}
+
 		g.players[playerMessage.Player] = &PlayerData{
-			PlayerName: join.PlayerName,
+			PlayerName: username,
 			Alive:      true,
 			Circle: Circle{
 				X:      rand.Float32() * 800,
@@ -326,14 +344,65 @@ func RunningGameIDs() []string {
 	return ids
 }
 
+type AuthError struct {
+	Message string
+	Code    int
+}
+
+func (e AuthError) Error() string {
+	return e.Message
+}
+
+func Authorize(token string) (PlayerInfo, AuthError) {
+	if token == "" {
+		return PlayerInfo{}, AuthError{"No token provided", http.StatusUnauthorized}
+	}
+
+	req, err := http.NewRequest("GET", conf.AuthEndpoint, nil)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to create auth request", http.StatusInternalServerError}
+	}
+
+	req.Header.Set("Authorization", token)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to authorize", http.StatusInternalServerError}
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return PlayerInfo{}, AuthError{"Failed to authorize", res.StatusCode}
+	}
+
+	var playerInfo PlayerInfo
+	err = json.NewDecoder(res.Body).Decode(&playerInfo)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to decode auth response", http.StatusInternalServerError}
+	}
+
+	return playerInfo, AuthError{}
+}
+
 func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	game, ok := runningGames[gameID]
 	if !ok {
+		log.Error("Game not found")
 		http.Error(w, "Game not found", http.StatusNotFound)
 		return
 	}
 
-	// TODO: check if the player can join (he went through the lobby service)
-	serveWebSocket(game, w, r)
+	playerInfo := PlayerInfo{}
+	if conf.RequireAuth {
+		token := "Bearer " + r.URL.Query().Get("token")
+		data, err := Authorize(token)
+		if err != (AuthError{}) {
+			http.Error(w, err.Message, err.Code)
+			log.WithError(err).Error("Failed to authorize player")
+			return
+		}
+		playerInfo = data
+	}
+
+	serveWebSocket(playerInfo, game, w, r)
 }
