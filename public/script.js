@@ -2,12 +2,37 @@ const buttons = document.getElementById("buttons");
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-const playerName = "player" + Math.floor(Math.random() * 1000);
+let playerName = "player" + Math.floor(Math.random() * 1000);
 const otherPlayers = {};
 const food = {}
 let player;
 
 let ws;
+
+function parseJwt(token) {
+    var base64Url = token.split('.')[1];
+    var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    var jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+
+    return JSON.parse(jsonPayload);
+}
+
+function getToken() {
+    let token;
+    if (sessionStorage["oidc.user:https://rso-keycloak.janvasiljevic.com/realms/aga.rso:fe-client"]) {
+        token = JSON.parse(sessionStorage["oidc.user:https://rso-keycloak.janvasiljevic.com/realms/aga.rso:fe-client"]).id_token;
+    } else {
+        token = document.getElementById("token").value;
+    }
+
+    if (token) {
+        playerName = parseJwt(token).preferred_username;
+    }
+
+    return token;
+}
 
 function updatePlayers(playerData) {
     for (const p of playerData) {
@@ -58,10 +83,18 @@ fetch(`${window.location.pathname}list`).then(
             button.innerText = game;
             button.addEventListener("click", async () => {
                 if (ws !== undefined) {
+                    for (const playerName in otherPlayers) {
+                        delete otherPlayers[playerName];
+                    }
+                    for (const f in food) {
+                        delete food[f];
+                    }
                     ws.close();
                 }
+
+
                 const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-                ws = new WebSocket(`${protocol}://${window.location.host}${window.location.pathname}connect/${game}`);
+                ws = new WebSocket(`${protocol}://${window.location.host}${window.location.pathname}connect/${game}?token=${getToken()}`);
                 ws.onopen = () => {
                     ws.send(JSON.stringify({ type: "join", data: { playerName } }));
                 };
@@ -109,7 +142,9 @@ function step(timestamp) {
     }
 
     if (dx !== 0 || dy !== 0) {
-        ws.send(JSON.stringify({ type: "move", data: { x: dx, y: dy } }));
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "move", data: { x: dx, y: dy } }));
+        }
     }
 
     if (player?.alive) {

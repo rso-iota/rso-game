@@ -16,11 +16,21 @@ var upgrader = websocket.Upgrader{
 }
 
 type Player struct {
+	info PlayerInfo
+
 	lobby *Game
 
 	conn *websocket.Conn
 
 	send chan []byte
+}
+
+type PlayerInfo struct {
+	Id        string `json:"sub"`
+	Email     string `json:"email"`
+	Username  string `json:"preferredUsername"`
+	Surname   string `json:"familyName"`
+	GivenName string `json:"givenName"`
 }
 
 func (p *Player) receiveMessage() {
@@ -54,7 +64,7 @@ func (p *Player) sendMessage() {
 	}
 }
 
-func serveWebSocket(game *Game, w http.ResponseWriter, r *http.Request) {
+func serveWebSocket(playerInfo PlayerInfo, game *Game, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to upgrade connection to websocket")
@@ -62,6 +72,7 @@ func serveWebSocket(game *Game, w http.ResponseWriter, r *http.Request) {
 	}
 
 	player := &Player{
+		info:  playerInfo,
 		lobby: game,
 		conn:  conn,
 		send:  make(chan []byte),

@@ -6,12 +6,14 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"rso-game/config"
+	"rso-game/nats"
 	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
+var conf config.Config
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
 var gameConfig *config.Config
@@ -19,6 +21,10 @@ var gameConfig *config.Config
 // SetConfig sets the global game configuration
 func SetConfig(cfg *config.Config) {
 	gameConfig = cfg
+}
+
+func SetGlobalConfig(c config.Config) {
+	conf = c
 }
 
 type Game struct {
@@ -44,6 +50,7 @@ type PlayerMessage struct {
 }
 
 type PlayerData struct {
+	PlayerId   string
 	PlayerName string `json:"playerName"`
 	Alive      bool   `json:"alive"`
 	Circle     Circle `json:"circle"`
@@ -140,7 +147,7 @@ func (g *Game) loop(time time.Time) {
 
 	updatedPlayers := make([]PlayerData, 0, len(g.players))
 	for player, move := range g.moveMessages {
-		if !g.players[player].Alive {
+		if p, ok := g.players[player]; !ok || !p.Alive {
 			continue
 		}
 		playerData := g.players[player]
@@ -165,6 +172,9 @@ func (g *Game) loop(time time.Time) {
 			if food.Circle.overlap(player.Circle) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
+
+				nats.Publish("food", []byte(player.PlayerId))
+
 				break
 			}
 		}
@@ -288,8 +298,17 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			return
 		}
 
+		// Backward compatibility
+		if playerMessage.Player.info == (PlayerInfo{}) {
+			playerMessage.Player.info = PlayerInfo{
+				Username: join.PlayerName,
+				Id:       join.PlayerName,
+			}
+		}
+
 		g.players[playerMessage.Player] = &PlayerData{
-			PlayerName: join.PlayerName,
+			PlayerName: playerMessage.Player.info.Username,
+			PlayerId:   playerMessage.Player.info.Id,
 			Alive:      true,
 			Circle: Circle{
 				X:      rand.Float32() * 800,
@@ -408,14 +427,65 @@ func RunningGameIDs() []string {
 	return ids
 }
 
+type AuthError struct {
+	Message string
+	Code    int
+}
+
+func (e AuthError) Error() string {
+	return e.Message
+}
+
+func Authorize(token string) (PlayerInfo, AuthError) {
+	if token == "" {
+		return PlayerInfo{}, AuthError{"No token provided", http.StatusUnauthorized}
+	}
+
+	req, err := http.NewRequest("GET", conf.AuthEndpoint, nil)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to create auth request", http.StatusInternalServerError}
+	}
+
+	req.Header.Set("Authorization", token)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to authorize", http.StatusInternalServerError}
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return PlayerInfo{}, AuthError{"Failed to authorize", res.StatusCode}
+	}
+
+	var playerInfo PlayerInfo
+	err = json.NewDecoder(res.Body).Decode(&playerInfo)
+	if err != nil {
+		return PlayerInfo{}, AuthError{"Failed to decode auth response", http.StatusInternalServerError}
+	}
+
+	return playerInfo, AuthError{}
+}
+
 func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	game, ok := runningGames[gameID]
 	if !ok {
+		log.Error("Game not found")
 		http.Error(w, "Game not found", http.StatusNotFound)
 		return
 	}
 
-	// TODO: check if the player can join (he went through the lobby service)
-	serveWebSocket(game, w, r)
+	playerInfo := PlayerInfo{}
+	if conf.RequireAuth {
+		token := "Bearer " + r.URL.Query().Get("token")
+		data, err := Authorize(token)
+		if err != (AuthError{}) {
+			http.Error(w, err.Message, err.Code)
+			log.WithError(err).Error("Failed to authorize player")
+			return
+		}
+		playerInfo = data
+	}
+
+	serveWebSocket(playerInfo, game, w, r)
 }

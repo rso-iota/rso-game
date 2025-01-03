@@ -1,18 +1,17 @@
 package main
 
 import (
-	"reflect"
 	"rso-game/config"
 	"rso-game/game"
+	"rso-game/nats"
 	"rso-game/server"
 
-	"github.com/caarlos0/env/v11"
-	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 )
 
 func main() {
-	godotenv.Load("defaults.env")
+	conf := config.Init()
+
 
 	var config config.Config
 	err := env.Parse(&config)
@@ -34,8 +33,9 @@ func main() {
 
 	game.SetConfig(&config)
 
-	// Create test games if configured
-	testGames := config.NumTestGames
+	game.SetGlobalConfig(conf)
+
+	testGames := conf.NumTestGames
 	if testGames > 0 {
 		log.Debug("Creating test games")
 		for range testGames {
@@ -43,5 +43,6 @@ func main() {
 		}
 	}
 
-	server.Start(config)
+	nats.Connect(conf.NatsURL)
+	server.Start(conf)
 }
