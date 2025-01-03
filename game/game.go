@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"time"
+	"rso-game/config"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -13,6 +14,12 @@ import (
 
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
+var gameConfig *config.Config
+
+// SetConfig sets the global game configuration
+func SetConfig(cfg *config.Config) {
+	gameConfig = cfg
+}
 
 type Game struct {
 	ID string
@@ -71,13 +78,22 @@ func (l *Circle) addArea(radius float32) {
 var runningGames = make(map[string]*Game)
 
 func (g *Game) manageBots() {
+	if g.botClient == nil {
+		return
+	}
+
+	// Only try to add bots if we have a minimum player requirement
+	if g.minPlayers <= 0 {
+		return
+	}
+
 	if len(g.players) < g.minPlayers {
 		botsNeeded := g.minPlayers - len(g.players)
 		for i := 0; i < botsNeeded; i++ {
-			_, err := g.botClient.CreateBot(g.ID, "medium") // Bot will connect as a player
+			_, err := g.botClient.CreateBot(g.ID, "medium")
 			if err != nil {
-				log.WithError(err).Error("Failed to create bot")
-				continue
+				log.WithError(err).Warn("Failed to create bot, skipping bot management")
+				return // Skip further bot creation attempts if we encounter an error
 			}
 		}
 	}
@@ -85,7 +101,10 @@ func (g *Game) manageBots() {
 
 func (g *Game) Run() {
 	ticker := time.NewTicker(30 * time.Millisecond)
-	botCheckTicker := time.NewTicker(5 * time.Second) // Check for bots every 5 seconds
+	defer ticker.Stop()
+
+	botCheckTicker := time.NewTicker(5 * time.Second)
+	defer botCheckTicker.Stop()
 
 	for {
 		select {
@@ -323,7 +342,12 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGame(botClient *BotClient, minPlayers int) string {
+func CreateGame() string {
+	if gameConfig == nil {
+		log.Error("Game configuration not set. Call SetConfig() before creating games.")
+		return ""
+	}
+
 	id := uuid.New().String()
 	food := make([]Food, NUM_FOOD)
 	for i := 0; i < NUM_FOOD; i++ {
@@ -336,6 +360,22 @@ func CreateGame(botClient *BotClient, minPlayers int) string {
 			},
 		}
 	}
+
+	var botClient *BotClient
+	var minPlayers int
+
+	// Only try to set up bot client if bot service URL is configured
+	if gameConfig.BotServiceURL != "" {
+		var err error
+		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		if err != nil {
+			log.WithError(err).Info("Bot service unavailable, game will run without bots")
+		} else {
+			// Only set minPlayers if we successfully connected to the bot service
+			minPlayers = gameConfig.MinPlayers
+		}
+	}
+
 	game := &Game{
 		ID:           id,
 		players:      make(map[*Player]*PlayerData),

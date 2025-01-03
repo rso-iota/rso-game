@@ -32,19 +32,14 @@ func main() {
 	}
 	log.SetLevel(log.DebugLevel)
 
-	// Initialize bot client
-	botClient, err := game.NewBotClient(config.BotServiceURL)
-	if err != nil {
-		log.WithError(err).Fatal("Failed to create bot client")
-	}
-	defer botClient.Close()
+	game.SetConfig(&config)
 
 	// Create test games if configured
 	testGames := config.NumTestGames
 	if testGames > 0 {
 		log.Debug("Creating test games")
 		for range testGames {
-			game.CreateGame(botClient, config.MinPlayers)
+			game.CreateGame()
 		}
 	}
 
