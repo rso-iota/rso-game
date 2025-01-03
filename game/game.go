@@ -5,8 +5,8 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
-	"time"
 	"rso-game/config"
+	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -62,7 +62,7 @@ type Circle struct {
 
 type GameState struct {
 	Players []PlayerData `json:"players"`
-	Food    []Food      `json:"food"`
+	Food    []Food       `json:"food"`
 }
 
 func (l Circle) overlap(other Circle) bool {
@@ -109,8 +109,8 @@ func (g *Game) Run() {
 	for {
 		select {
 		case player := <-g.connect:
-			log.Printf("Player connected to game %s", g.ID)
 			g.players[player] = &PlayerData{}
+			log.Printf("Player %s connected to game %s", g.players[player].PlayerName, g.ID)
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
 				log.Printf("Player disconnected from game %s", g.ID)
