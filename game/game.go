@@ -159,15 +159,25 @@ func (g *Game) loop(time time.Time) {
 			}
 
 			if playerData.Circle.overlap(otherPlayerData.Circle) {
+				var smaller *PlayerData
+				var bigger *PlayerData
+
 				if playerData.Circle.Radius > otherPlayerData.Circle.Radius {
-					playerData.Circle.addArea(otherPlayerData.Circle.Radius)
-					otherPlayerData.Alive = false
+					bigger = playerData
+					smaller = otherPlayerData
 				} else {
-					otherPlayerData.Circle.addArea(playerData.Circle.Radius)
-					playerData.Alive = false
+					bigger = otherPlayerData
+					smaller = playerData
 				}
-				updatedPlayers = append(updatedPlayers, *playerData)
-				updatedPlayers = append(updatedPlayers, *otherPlayerData)
+
+				bigger.Circle.addArea(smaller.Circle.Radius)
+				smaller.Alive = false
+
+				nats.Publish("died", []byte(smaller.PlayerId))
+				nats.Publish("kill", []byte(bigger.PlayerId))
+
+				updatedPlayers = append(updatedPlayers, *smaller)
+				updatedPlayers = append(updatedPlayers, *bigger)
 			}
 		}
 	}
