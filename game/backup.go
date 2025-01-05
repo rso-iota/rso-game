@@ -13,12 +13,10 @@ import (
 var ctx = context.Background()
 var client *redis.Client
 var hostname string = os.Getenv("HOSTNAME")
-var url string
 
 func InitBackup(redisURL string) {
-	url = redisURL
 	client = redis.NewClient(&redis.Options{
-		Addr:     url,
+		Addr:     redisURL,
 		Password: "",
 		DB:       0,
 	})
@@ -27,7 +25,7 @@ func InitBackup(redisURL string) {
 	if err != nil {
 		log.WithError(err).Error("Failed to connect to Redis")
 	} else {
-		log.Info("Connected to Redis at ", url)
+		log.Info("Connected to Redis at ", redisURL)
 	}
 }
 
