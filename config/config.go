@@ -9,17 +9,17 @@ import (
 )
 
 type Config struct {
-
-	HTTPPort      string `env:"GAME_HTTP_PORT" envDefault:"8080"`
-	GRPCPort      string `env:"GAME_GRPC_PORT" envDefault:"8081"`
-	NumTestGames  int    `env:"GAME_NUM_TEST_GAMES" envDefault:"4"`
-	TestServer    bool   `env:"GAME_TEST_SERVER" envDefault:"true"`
-	LogJSON       bool   `env:"GAME_LOG_JSON" envDefault:"false"`
-	BotServiceURL string `env:"GAME_BOT_SERVICE_URL" envDefault:"localhost:50051"`
-	MinPlayers    int    `env:"GAME_MIN_PLAYERS" envDefault:"3"`
-	NatsURL      string `env:"GAME_NATS_URL"`
-	AuthEndpoint string `env:"GAME_AUTH_EP"`
-	RequireAuth  bool   `env:"GAME_REQUIRE_AUTH"`
+	HttpPort       string `env:"GAME_HTTP_PORT"`
+	GrpcPort       string `env:"GAME_GRPC_PORT"`
+	NumTestGames   int    `env:"GAME_NUM_TEST_GAMES"`
+	TestServer     bool   `env:"GAME_TEST_SERVER"`
+	LogJSON        bool   `env:"GAME_LOG_JSON"`
+	NatsURL        string `env:"GAME_NATS_URL"`
+	AuthEndpoint   string `env:"GAME_AUTH_EP"`
+	RequireAuth    bool   `env:"GAME_REQUIRE_AUTH"`
+	BackupRedisUrl string `env:"GAME_BACKUP_REDIS_URL"`
+	MinPlayers     int    `env:"GAME_MIN_PLAYERS" envDefault:"3"`
+	BotServiceURL  string `env:"GAME_BOT_SERVICE_URL" envDefault:"localhost:50051"`
 }
 
 func Init() Config {
@@ -38,12 +38,12 @@ func Init() Config {
 		fields[val.Type().Field(i).Name] = val.Field(i).Interface()
 	}
 
-	log.WithFields(fields).Info("Loaded config")
-
 	if config.LogJSON {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 	log.SetLevel(log.DebugLevel)
+
+	log.WithFields(fields).Info("Loaded config")
 
 	return config
 }

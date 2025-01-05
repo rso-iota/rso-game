@@ -65,12 +65,12 @@ func serveGRPC(l net.Listener) {
 }
 
 func Start(config config.Config) {
-	httpListen, err := net.Listen("tcp", ":"+config.HTTPPort)
+	httpListen, err := net.Listen("tcp", ":"+config.HttpPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	grpcListen, err := net.Listen("tcp", ":"+config.GRPCPort)
+	grpcListen, err := net.Listen("tcp", ":"+config.GrpcPort)
 	if err != nil {
 		log.Fatal(err)
 	}

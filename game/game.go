@@ -30,8 +30,10 @@ func SetGlobalConfig(c config.Config) {
 type Game struct {
 	ID string
 
-	players map[*Player]*PlayerData
-	food    []Food
+	players       map[*Player]*PlayerData
+	playersToDel  []*Player
+	loadedPlayers []PlayerData
+	food          []Food
 
 	connect    chan *Player
 	disconnect chan *Player
@@ -113,16 +115,28 @@ func (g *Game) Run() {
 	botCheckTicker := time.NewTicker(5 * time.Second)
 	defer botCheckTicker.Stop()
 
+	backupTicker := time.NewTicker(5 * time.Second)
+	defer backupTicker.Stop()
+
 	for {
 		select {
 		case player := <-g.connect:
-			g.players[player] = &PlayerData{}
-			log.Printf("Player %s connected to game %s", g.players[player].PlayerName, g.ID)
+			g.players[player] = &PlayerData{
+				PlayerName: "TEMP",
+				PlayerId:   "TEMP",
+				Alive:      false,
+				Circle: Circle{
+					X:      -10000,
+					Y:      -10000,
+					Radius: 0,
+				},
+			}
+			log.Info("Player connected to lobby", g.ID)
+
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
-				log.Printf("Player disconnected from game %s", g.ID)
-				delete(g.players, player)
-				close(player.send)
+				log.Info("Player disconnected from lobby", g.ID)
+				g.playersToDel = append(g.playersToDel, player)
 
 				playerLeftMsg := PlayerLeftMessage{
 					Type: "playerLeft",
@@ -137,13 +151,29 @@ func (g *Game) Run() {
 			g.manageBots()
 		case time := <-ticker.C:
 			g.loop(time)
+		case <-backupTicker.C:
+			state := g.GetGameState()
+			SaveToBackup(g.ID, state)
 		}
+	}
+}
+
+func (g *Game) GetGameState() GameState {
+	return GameState{
+		Players: g.onlinePlayers(),
+		Food:    g.food,
 	}
 }
 
 func (g *Game) loop(time time.Time) {
 	delta := time.Sub(g.previousTime).Seconds()
 	g.previousTime = time
+
+	for _, player := range g.playersToDel {
+		delete(g.players, player)
+		close(player.send)
+	}
+	g.playersToDel = nil
 
 	updatedPlayers := make([]PlayerData, 0, len(g.players))
 	for player, move := range g.moveMessages {
@@ -173,7 +203,6 @@ func (g *Game) loop(time time.Time) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
 
-				
 				nats.Publish("food", []byte(player.PlayerId))
 
 				break
@@ -202,15 +231,25 @@ func (g *Game) loop(time time.Time) {
 			}
 
 			if playerData.Circle.overlap(otherPlayerData.Circle) {
+				var smaller *PlayerData
+				var bigger *PlayerData
+
 				if playerData.Circle.Radius > otherPlayerData.Circle.Radius {
-					playerData.Circle.addArea(otherPlayerData.Circle.Radius)
-					otherPlayerData.Alive = false
+					bigger = playerData
+					smaller = otherPlayerData
 				} else {
-					otherPlayerData.Circle.addArea(playerData.Circle.Radius)
-					playerData.Alive = false
+					bigger = otherPlayerData
+					smaller = playerData
 				}
-				updatedPlayers = append(updatedPlayers, *playerData)
-				updatedPlayers = append(updatedPlayers, *otherPlayerData)
+
+				bigger.Circle.addArea(smaller.Circle.Radius)
+				smaller.Alive = false
+
+				nats.Publish("died", []byte(smaller.PlayerId))
+				nats.Publish("kill", []byte(bigger.PlayerId))
+
+				updatedPlayers = append(updatedPlayers, *smaller)
+				updatedPlayers = append(updatedPlayers, *bigger)
 			}
 		}
 	}
@@ -218,10 +257,7 @@ func (g *Game) loop(time time.Time) {
 	if len(updatedPlayers) > 0 {
 		state := GameStateMessage{
 			Type: "update",
-			Data: GameState{
-				Players: updatedPlayers,
-				Food:    updatedFood,
-			},
+			Data: g.GetGameState(),
 		}
 
 		g.broadcast(state)
@@ -307,23 +343,32 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			}
 		}
 
-		g.players[playerMessage.Player] = &PlayerData{
-			PlayerName: playerMessage.Player.info.Username,
-			PlayerId:   playerMessage.Player.info.Id,
-			Alive:      true,
-			Circle: Circle{
-				X:      rand.Float32() * 800,
-				Y:      rand.Float32() * 600,
-				Radius: 10,
-			},
+		var data *PlayerData = nil
+		for _, player := range g.loadedPlayers {
+			if player.PlayerId == playerMessage.Player.info.Id {
+				data = &player
+				break
+			}
 		}
+
+		if data == nil {
+			data = &PlayerData{
+				PlayerName: playerMessage.Player.info.Username,
+				PlayerId:   playerMessage.Player.info.Id,
+				Alive:      true,
+				Circle: Circle{
+					X:      rand.Float32() * 800,
+					Y:      rand.Float32() * 600,
+					Radius: 10,
+				},
+			}
+		}
+
+		g.players[playerMessage.Player] = data
 
 		state := GameStateMessage{
 			Type: "gameState",
-			Data: GameState{
-				Players: g.onlinePlayers(),
-				Food:    g.food,
-			},
+			Data: g.GetGameState(),
 		}
 
 		g.sendTo(playerMessage.Player, state)
@@ -362,6 +407,50 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
+func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *BotClient, minPlayers int) Game {
+	game := Game{
+		ID:            id,
+		players:       make(map[*Player]*PlayerData),
+		loadedPlayers: players,
+		food:          food,
+		connect:       make(chan *Player),
+		disconnect:    make(chan *Player),
+		messages_in:   make(chan PlayerMessage),
+		moveMessages:  make(map[*Player]MoveMessage),
+		previousTime:  time.Now(),
+		botClient:     botClient,
+		minPlayers:    minPlayers,
+	}
+
+	return game
+}
+
+func RestoreFromBackup() {
+	games := LoadBackup()
+
+	var botClient *BotClient
+	var minPlayers int
+
+	// Only try to set up bot client if bot service URL is configured
+	if gameConfig.BotServiceURL != "" {
+		var err error
+		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		if err != nil {
+			log.WithError(err).Info("Bot service unavailable, game will run without bots")
+		} else {
+			// Only set minPlayers if we successfully connected to the bot service
+			minPlayers = gameConfig.MinPlayers
+		}
+	}
+
+	for id, state := range games {
+		game := CreateGameStruct(id, state.Players, state.Food, botClient, minPlayers)
+		runningGames[id] = &game
+		go game.Run()
+		log.WithField("id", id).Info("Restored game from backup")
+	}
+}
+
 func CreateGame() string {
 	if gameConfig == nil {
 		log.Error("Game configuration not set. Call SetConfig() before creating games.")
@@ -369,6 +458,7 @@ func CreateGame() string {
 	}
 
 	id := uuid.New().String()
+
 	food := make([]Food, NUM_FOOD)
 	for i := 0; i < NUM_FOOD; i++ {
 		food[i] = Food{
@@ -396,24 +486,19 @@ func CreateGame() string {
 		}
 	}
 
-	game := &Game{
-		ID:           id,
-		players:      make(map[*Player]*PlayerData),
-		food:         food,
-		connect:      make(chan *Player),
-		disconnect:   make(chan *Player),
-		messages_in:  make(chan PlayerMessage),
-		moveMessages: make(map[*Player]MoveMessage),
-		previousTime: time.Now(),
-		botClient:    botClient,
-		minPlayers:   minPlayers,
-	}
-	runningGames[id] = game
+	game := CreateGameStruct(id, []PlayerData{}, food, botClient, minPlayers)
+	runningGames[id] = &game
 
 	go game.Run()
 	log.Printf("Creating new game %s. There are now %d running games", id, len(runningGames))
 
 	return id
+}
+
+func EnsureGames(num int) {
+	for len(runningGames) < num {
+		CreateGame()
+	}
 }
 
 func RunningGameIDs() []string {
@@ -482,7 +567,7 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 		data, err := Authorize(token)
 		if err != (AuthError{}) {
 			http.Error(w, err.Message, err.Code)
-			log.WithError(err).Error("Failed to authorize player")
+			log.WithError(err).Warn("Failed to authorize player")
 			return
 		}
 		playerInfo = data

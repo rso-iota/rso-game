@@ -5,25 +5,17 @@ import (
 	"rso-game/game"
 	"rso-game/nats"
 	"rso-game/server"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func main() {
 	conf := config.Init()
 	game.SetConfig(&conf)
 
-	log.SetLevel(log.DebugLevel)
-
-	testGames := conf.NumTestGames
-	if testGames > 0 {
-		log.Debug("Creating test games")
-		for range testGames {
-			game.CreateGame()
-		}
-	}
-
+	game.InitBackup(conf.BackupRedisUrl)
 	nats.Connect(conf.NatsURL)
+
+	game.RestoreFromBackup()
+	game.EnsureGames(conf.NumTestGames)
 
 	server.Start(conf)
 }
