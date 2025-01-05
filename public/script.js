@@ -163,6 +163,13 @@ function step(timestamp) {
         ctx.beginPath();
         ctx.arc(otherPlayers[playerName].x, otherPlayers[playerName].y, otherPlayers[playerName].r, 0, 2 * Math.PI);
         ctx.fill();
+
+        ctx.fillStyle = "black";
+        ctx.font = "20px Arial";
+
+        const halfWidth = ctx.measureText(playerName).width / 2;
+        const height = 10 + otherPlayers[playerName].r;
+        ctx.fillText(playerName, otherPlayers[playerName].x - halfWidth, otherPlayers[playerName].y - height);
     }
 
     for (const f in food) {
