@@ -25,6 +25,7 @@ type Game struct {
 	ID string
 
 	players       map[*Player]*PlayerData
+	playersToDel  []*Player
 	loadedPlayers []PlayerData
 	food          []Food
 
@@ -88,12 +89,20 @@ func (g *Game) Run() {
 		select {
 		case player := <-g.connect:
 			log.Println("Player connected to lobby", g.ID)
-			g.players[player] = nil
+			g.players[player] = &PlayerData{
+				PlayerName: "TEMP",
+				PlayerId:   "TEMP",
+				Alive:      false,
+				Circle: Circle{
+					X:      -10000,
+					Y:      -10000,
+					Radius: 0,
+				},
+			}
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
 				log.Println("Player disconnected from lobby", g.ID)
-				delete(g.players, player)
-				close(player.send)
+				g.playersToDel = append(g.playersToDel, player)
 
 				playerLeftMsg := PlayerLeftMessage{
 					Type: "playerLeft",
@@ -107,7 +116,6 @@ func (g *Game) Run() {
 		case time := <-ticker.C:
 			g.loop(time)
 		case <-backupTicker.C:
-			log.Debug("Saving game state")
 			state := g.GetGameState()
 			SaveToBackup(g.ID, state)
 		}
@@ -124,6 +132,12 @@ func (g *Game) GetGameState() GameState {
 func (g *Game) loop(time time.Time) {
 	delta := time.Sub(g.previousTime).Seconds()
 	g.previousTime = time
+
+	for _, player := range g.playersToDel {
+		delete(g.players, player)
+		close(player.send)
+	}
+	g.playersToDel = nil
 
 	updatedPlayers := make([]PlayerData, 0, len(g.players))
 	for player, move := range g.moveMessages {
@@ -458,7 +472,7 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 		data, err := Authorize(token)
 		if err != (AuthError{}) {
 			http.Error(w, err.Message, err.Code)
-			log.WithError(err).Error("Failed to authorize player")
+			log.WithError(err).Warn("Failed to authorize player")
 			return
 		}
 		playerInfo = data
