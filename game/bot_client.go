@@ -9,6 +9,7 @@ import (
 
 	pb "rso-game/grpc/bot"
 
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -45,6 +46,13 @@ func (bc *BotClient) CreateBot(gameID string, botID string, token string, diffic
 		botID = splits[len(splits)-1]
 		hostname = "game-svc-" + botID
 	}
+
+	log.WithFields(log.Fields{
+		"gameID":   gameID,
+		"botID":    botID,
+		"token":    token,
+		"hostname": hostname,
+	}).Info("Requesting bot")
 
 	req := &pb.CreateBotRequest{
 		BotId:       botID,
