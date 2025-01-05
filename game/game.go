@@ -569,6 +569,7 @@ func Authorize(game *Game, token string) (PlayerInfo, AuthError) {
 	if err != nil {
 		return PlayerInfo{}, AuthError{"Failed to decode auth response", http.StatusInternalServerError}
 	}
+	playerInfo.IsBot = false
 
 	return playerInfo, AuthError{}
 }
