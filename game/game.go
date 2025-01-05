@@ -24,8 +24,9 @@ func SetGlobalConfig(c config.Config) {
 type Game struct {
 	ID string
 
-	players map[*Player]*PlayerData
-	food    []Food
+	players       map[*Player]*PlayerData
+	loadedPlayers []PlayerData
+	food          []Food
 
 	connect    chan *Player
 	disconnect chan *Player
@@ -78,11 +79,16 @@ var runningGames = make(map[string]*Game)
 
 func (g *Game) Run() {
 	ticker := time.NewTicker(30 * time.Millisecond)
+	defer ticker.Stop()
+
+	backupTicker := time.NewTicker(5 * time.Second)
+	defer backupTicker.Stop()
+
 	for {
 		select {
 		case player := <-g.connect:
 			log.Println("Player connected to lobby", g.ID)
-			g.players[player] = &PlayerData{}
+			g.players[player] = nil
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
 				log.Println("Player disconnected from lobby", g.ID)
@@ -100,7 +106,18 @@ func (g *Game) Run() {
 			g.handleMessage(message)
 		case time := <-ticker.C:
 			g.loop(time)
+		case <-backupTicker.C:
+			log.Debug("Saving game state")
+			state := g.GetGameState()
+			SaveToBackup(g.ID, state)
 		}
+	}
+}
+
+func (g *Game) GetGameState() GameState {
+	return GameState{
+		Players: g.onlinePlayers(),
+		Food:    g.food,
 	}
 }
 
@@ -185,10 +202,7 @@ func (g *Game) loop(time time.Time) {
 	if len(updatedPlayers) > 0 {
 		state := GameStateMessage{
 			Type: "update",
-			Data: GameState{
-				Players: updatedPlayers,
-				Food:    updatedFood,
-			},
+			Data: g.GetGameState(),
 		}
 
 		g.broadcast(state)
@@ -256,23 +270,32 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 			}
 		}
 
-		g.players[playerMessage.Player] = &PlayerData{
-			PlayerName: playerMessage.Player.info.Username,
-			PlayerId:   playerMessage.Player.info.Id,
-			Alive:      true,
-			Circle: Circle{
-				X:      rand.Float32() * 800,
-				Y:      rand.Float32() * 600,
-				Radius: 10,
-			},
+		var data *PlayerData = nil
+		for _, player := range g.loadedPlayers {
+			if player.PlayerId == playerMessage.Player.info.Id {
+				data = &player
+				break
+			}
 		}
+
+		if data == nil {
+			data = &PlayerData{
+				PlayerName: playerMessage.Player.info.Username,
+				PlayerId:   playerMessage.Player.info.Id,
+				Alive:      true,
+				Circle: Circle{
+					X:      rand.Float32() * 800,
+					Y:      rand.Float32() * 600,
+					Radius: 10,
+				},
+			}
+		}
+
+		g.players[playerMessage.Player] = data
 
 		state := GameStateMessage{
 			Type: "gameState",
-			Data: GameState{
-				Players: g.onlinePlayers(),
-				Food:    g.food,
-			},
+			Data: g.GetGameState(),
 		}
 
 		g.sendTo(playerMessage.Player, state)
@@ -313,8 +336,36 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
+func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
+	game := Game{
+		ID:            id,
+		players:       make(map[*Player]*PlayerData),
+		loadedPlayers: players,
+		food:          food,
+		connect:       make(chan *Player),
+		disconnect:    make(chan *Player),
+		messages_in:   make(chan PlayerMessage),
+		moveMessages:  make(map[*Player]MoveMessage),
+		previousTime:  time.Now(),
+	}
+
+	return game
+}
+
+func RestoreFromBackup() {
+	games := LoadBackup()
+
+	for id, state := range games {
+		game := CreateGameStruct(id, state.Players, state.Food)
+		runningGames[id] = &game
+		go game.Run()
+		log.WithField("id", id).Info("Restored game from backup")
+	}
+}
+
 func CreateGame() string {
 	id := uuid.New().String()
+
 	food := make([]Food, NUM_FOOD)
 	for i := 0; i < NUM_FOOD; i++ {
 		food[i] = Food{
@@ -326,22 +377,19 @@ func CreateGame() string {
 			},
 		}
 	}
-	game := &Game{
-		ID:           id,
-		players:      make(map[*Player]*PlayerData),
-		food:         food,
-		connect:      make(chan *Player),
-		disconnect:   make(chan *Player),
-		messages_in:  make(chan PlayerMessage),
-		moveMessages: make(map[*Player]MoveMessage),
-		previousTime: time.Now(),
-	}
-	runningGames[id] = game
+	game := CreateGameStruct(id, []PlayerData{}, food)
+	runningGames[id] = &game
 
 	go game.Run()
 	log.Println("Creating new game. There are now", len(runningGames), "running games")
 
 	return id
+}
+
+func EnsureGames(num int) {
+	for len(runningGames) < num {
+		CreateGame()
+	}
 }
 
 func RunningGameIDs() []string {

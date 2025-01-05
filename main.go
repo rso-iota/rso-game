@@ -5,8 +5,6 @@ import (
 	"rso-game/game"
 	"rso-game/nats"
 	"rso-game/server"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -14,14 +12,11 @@ func main() {
 
 	game.SetGlobalConfig(conf)
 
-	testGames := conf.NumTestGames
-	if testGames > 0 {
-		log.Debug("Creating test games")
-		for range testGames {
-			game.CreateGame()
-		}
-	}
-
+	game.InitBackup(conf)
 	nats.Connect(conf.NatsURL)
+
+	game.RestoreFromBackup()
+	game.EnsureGames(conf.NumTestGames)
+
 	server.Start(conf)
 }

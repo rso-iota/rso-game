@@ -8,13 +8,16 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.38.0
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/grpc v1.69.2
 	google.golang.org/protobuf v1.36.0
 )
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/nats-io/nkeys v0.4.9 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect

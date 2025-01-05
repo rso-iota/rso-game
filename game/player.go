@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 var upgrader = websocket.Upgrader{
@@ -41,6 +41,7 @@ func (p *Player) receiveMessage() {
 
 	for {
 		_, message, err := p.conn.ReadMessage()
+
 		if err != nil {
 			break
 		}
@@ -67,7 +68,7 @@ func (p *Player) sendMessage() {
 func serveWebSocket(playerInfo PlayerInfo, game *Game, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to upgrade connection to websocket")
+		log.WithError(err).Error("Failed to upgrade connection to websocket")
 		return
 	}
 
