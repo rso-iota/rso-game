@@ -9,7 +9,7 @@ import (
 
 func main() {
 	conf := config.Init()
-	game.SetConfig(&conf)
+	game.SetGlobalConfig(conf)
 
 	game.InitBackup(conf.BackupRedisUrl)
 	nats.Connect(conf.NatsURL)

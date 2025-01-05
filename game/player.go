@@ -26,11 +26,9 @@ type Player struct {
 }
 
 type PlayerInfo struct {
-	Id        string `json:"sub"`
-	Email     string `json:"email"`
-	Username  string `json:"preferredUsername"`
-	Surname   string `json:"familyName"`
-	GivenName string `json:"givenName"`
+	Id       string `json:"sub"`
+	Username string `json:"preferredUsername"`
+	IsBot    bool
 }
 
 func (p *Player) receiveMessage() {

@@ -3,11 +3,12 @@ package game
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	pb "rso-game/grpc/bot"
 
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -18,7 +19,7 @@ type BotClient struct {
 }
 
 func NewBotClient(address string) (*BotClient, error) {
-	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to bot service: %v", err)
 	}
@@ -34,13 +35,21 @@ func (bc *BotClient) Close() error {
 	return bc.conn.Close()
 }
 
-func (bc *BotClient) CreateBot(gameID string, difficulty string) (string, error) {
+func (bc *BotClient) CreateBot(gameID string, botID string, token string, difficulty string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	botID := uuid.New().String()
+	hostname := os.Getenv("HOSTNAME")
+	if strings.Contains(hostname, "statefulset") {
+		splits := strings.Split(hostname, "-")
+		botID = splits[len(splits)-1]
+		hostname = "game-svc-" + botID
+	}
+
 	req := &pb.CreateBotRequest{
-		BotId: botID,
+		BotId:       botID,
+		AccessToken: token,
+		Hostname:    hostname,
 		Bot: &pb.Bot{
 			GameId:     gameID,
 			Difficulty: difficulty,

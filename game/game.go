@@ -16,12 +16,6 @@ import (
 var conf config.Config
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
-var gameConfig *config.Config
-
-// SetConfig sets the global game configuration
-func SetConfig(cfg *config.Config) {
-	gameConfig = cfg
-}
 
 func SetGlobalConfig(c config.Config) {
 	conf = c
@@ -34,6 +28,8 @@ type Game struct {
 	playersToDel  []*Player
 	loadedPlayers []PlayerData
 	food          []Food
+
+	botTokens map[string]string
 
 	connect    chan *Player
 	disconnect chan *Player
@@ -53,6 +49,7 @@ type PlayerMessage struct {
 
 type PlayerData struct {
 	PlayerId   string
+	IsBot      bool   `json:"isBot"`
 	PlayerName string `json:"playerName"`
 	Alive      bool   `json:"alive"`
 	Circle     Circle `json:"circle"`
@@ -99,11 +96,14 @@ func (g *Game) manageBots() {
 	if len(g.players) < g.minPlayers {
 		botsNeeded := g.minPlayers - len(g.players)
 		for i := 0; i < botsNeeded; i++ {
-			_, err := g.botClient.CreateBot(g.ID, "medium")
+			token := uuid.New().String()
+			botName := "bot-" + token[:4]
+			_, err := g.botClient.CreateBot(g.ID, botName, token, "medium")
 			if err != nil {
 				log.WithError(err).Warn("Failed to create bot, skipping bot management")
 				return // Skip further bot creation attempts if we encounter an error
 			}
+			g.botTokens[token] = botName
 		}
 	}
 }
@@ -203,7 +203,11 @@ func (g *Game) loop(time time.Time) {
 				player.Circle.addArea(food.Circle.Radius)
 				foodsToChange = append(foodsToChange, i)
 
-				nats.Publish("food", []byte(player.PlayerId))
+				if player.IsBot {
+					nats.Publish("bot_food", []byte(""))
+				} else {
+					nats.Publish("food", []byte(player.PlayerId))
+				}
 
 				break
 			}
@@ -245,8 +249,17 @@ func (g *Game) loop(time time.Time) {
 				bigger.Circle.addArea(smaller.Circle.Radius)
 				smaller.Alive = false
 
-				nats.Publish("died", []byte(smaller.PlayerId))
-				nats.Publish("kill", []byte(bigger.PlayerId))
+				if smaller.IsBot {
+					nats.Publish("bot_died", []byte(""))
+				} else {
+					nats.Publish("died", []byte(smaller.PlayerId))
+				}
+
+				if bigger.IsBot {
+					nats.Publish("bot_kill", []byte(""))
+				} else {
+					nats.Publish("kill", []byte(bigger.PlayerId))
+				}
 
 				updatedPlayers = append(updatedPlayers, *smaller)
 				updatedPlayers = append(updatedPlayers, *bigger)
@@ -361,6 +374,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 					Y:      rand.Float32() * 600,
 					Radius: 10,
 				},
+				IsBot: playerMessage.Player.info.IsBot,
 			}
 		}
 
@@ -432,14 +446,14 @@ func RestoreFromBackup() {
 	var minPlayers int
 
 	// Only try to set up bot client if bot service URL is configured
-	if gameConfig.BotServiceURL != "" {
+	if conf.BotServiceURL != "" {
 		var err error
-		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		botClient, err = NewBotClient(conf.BotServiceURL)
 		if err != nil {
 			log.WithError(err).Info("Bot service unavailable, game will run without bots")
 		} else {
 			// Only set minPlayers if we successfully connected to the bot service
-			minPlayers = gameConfig.MinPlayers
+			minPlayers = conf.MinPlayers
 		}
 	}
 
@@ -452,11 +466,6 @@ func RestoreFromBackup() {
 }
 
 func CreateGame() string {
-	if gameConfig == nil {
-		log.Error("Game configuration not set. Call SetConfig() before creating games.")
-		return ""
-	}
-
 	id := uuid.New().String()
 
 	food := make([]Food, NUM_FOOD)
@@ -475,14 +484,14 @@ func CreateGame() string {
 	var minPlayers int
 
 	// Only try to set up bot client if bot service URL is configured
-	if gameConfig.BotServiceURL != "" {
+	if conf.BotServiceURL != "" {
 		var err error
-		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		botClient, err = NewBotClient(conf.BotServiceURL)
 		if err != nil {
 			log.WithError(err).Info("Bot service unavailable, game will run without bots")
 		} else {
 			// Only set minPlayers if we successfully connected to the bot service
-			minPlayers = gameConfig.MinPlayers
+			minPlayers = conf.MinPlayers
 		}
 	}
 
@@ -522,9 +531,19 @@ func (e AuthError) Error() string {
 	return e.Message
 }
 
-func Authorize(token string) (PlayerInfo, AuthError) {
+func Authorize(game *Game, token string) (PlayerInfo, AuthError) {
 	if token == "" {
 		return PlayerInfo{}, AuthError{"No token provided", http.StatusUnauthorized}
+	}
+
+	if name, ok := game.botTokens[token]; ok {
+		delete(game.botTokens, token)
+
+		return PlayerInfo{
+			Username: name,
+			Id:       name,
+			IsBot:    true,
+		}, AuthError{}
 	}
 
 	req, err := http.NewRequest("GET", conf.AuthEndpoint, nil)
@@ -532,7 +551,7 @@ func Authorize(token string) (PlayerInfo, AuthError) {
 		return PlayerInfo{}, AuthError{"Failed to create auth request", http.StatusInternalServerError}
 	}
 
-	req.Header.Set("Authorization", token)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -563,8 +582,8 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 
 	playerInfo := PlayerInfo{}
 	if conf.RequireAuth {
-		token := "Bearer " + r.URL.Query().Get("token")
-		data, err := Authorize(token)
+		token := r.URL.Query().Get("token")
+		data, err := Authorize(game, token)
 		if err != (AuthError{}) {
 			http.Error(w, err.Message, err.Code)
 			log.WithError(err).Warn("Failed to authorize player")
