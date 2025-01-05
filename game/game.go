@@ -434,6 +434,7 @@ func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *B
 		previousTime:  time.Now(),
 		botClient:     botClient,
 		minPlayers:    minPlayers,
+		botTokens:     make(map[string]string),
 	}
 
 	return game
