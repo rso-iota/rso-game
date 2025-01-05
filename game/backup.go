@@ -55,25 +55,17 @@ func FromBytes(data []byte) GameState {
 	return game
 }
 
-func dbError(msg string, err error) {
-	log.WithError(err).Error(msg)
-	log.Debug("Trying to reconnect to Redis")
-	if client.Ping(ctx).Err() != nil {
-		InitBackup(url)
-	}
-}
-
 func SaveToBackup(key string, data GameState) {
 	err := client.Set(ctx, hostname+":"+key, ToBytes(data), 0).Err()
 	if err != nil {
-		dbError("Failed to save game state", err)
+		log.WithError(err).Error("Failed to save game state")
 	}
 }
 
 func LoadBackup() map[string]GameState {
 	keys, err := client.Keys(ctx, hostname+":*").Result()
 	if err != nil {
-		dbError("Failed to get keys", err)
+		log.WithError(err).Error("Failed to get keys")
 	}
 
 	games := make(map[string]GameState)
@@ -81,7 +73,7 @@ func LoadBackup() map[string]GameState {
 	for _, key := range keys {
 		bytes, err := client.Get(ctx, key).Result()
 		if err != nil {
-			dbError("Failed to get game state", err)
+			log.WithError(err).Error("Failed to get game state")
 		}
 
 		gameId := key[len(hostname)+1:]
