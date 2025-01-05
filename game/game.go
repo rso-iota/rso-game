@@ -349,6 +349,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		}
 
 		// Backward compatibility
+		log.Info("info", playerMessage.Player.info)
 		if playerMessage.Player.info == (PlayerInfo{}) {
 			playerMessage.Player.info = PlayerInfo{
 				Username: join.PlayerName,
@@ -434,6 +435,7 @@ func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *B
 		previousTime:  time.Now(),
 		botClient:     botClient,
 		minPlayers:    minPlayers,
+		botTokens:     make(map[string]string),
 	}
 
 	return game
@@ -590,7 +592,9 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		playerInfo = data
+
 	}
+	log.Info("Player connected to game", playerInfo)
 
 	serveWebSocket(playerInfo, game, w, r)
 }
