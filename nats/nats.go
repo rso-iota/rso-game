@@ -5,27 +5,29 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var Conn *nats.Conn
+var conn *nats.Conn
+var url string
 
-func Connect(url string) {
-	if url == "" {
+func Connect(natsUrl string) {
+	url = natsUrl
+	if natsUrl == "" {
 		// No NATS server configured, do nothing.
 		log.Info("No nats server configured")
 		return
 	}
 
-	c, err := nats.Connect(url)
+	c, err := nats.Connect(natsUrl)
 	if err != nil {
 		log.WithError(err).Error("Failed to connect to nats")
 		return
 	}
 
-	log.Info("Connected to nats at ", url)
-	Conn = c
+	log.Info("Connected to nats at ", natsUrl)
+	conn = c
 }
 
 func Publish(subject string, data []byte) {
-	err := Conn.Publish(subject, data)
+	err := conn.Publish(subject, data)
 	if err != nil {
 		log.WithError(err).Error("Failed to publish message")
 	}
