@@ -8,7 +8,7 @@ import (
 	"rso-game/config"
 	"rso-game/game"
 
-	pb "rso-game/grpc"
+	pb "rso-game/grpc/game"
 
 	log "github.com/sirupsen/logrus"
 

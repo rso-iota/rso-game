@@ -18,6 +18,8 @@ type Config struct {
 	AuthEndpoint   string `env:"GAME_AUTH_EP"`
 	RequireAuth    bool   `env:"GAME_REQUIRE_AUTH"`
 	BackupRedisUrl string `env:"GAME_BACKUP_REDIS_URL"`
+	MinPlayers     int    `env:"GAME_MIN_PLAYERS" envDefault:"3"`
+	BotServiceURL  string `env:"GAME_BOT_SERVICE_URL" envDefault:"localhost:50051"`
 }
 
 func Init() Config {

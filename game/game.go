@@ -16,6 +16,12 @@ import (
 var conf config.Config
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
+var gameConfig *config.Config
+
+// SetConfig sets the global game configuration
+func SetConfig(cfg *config.Config) {
+	gameConfig = cfg
+}
 
 func SetGlobalConfig(c config.Config) {
 	conf = c
@@ -36,6 +42,8 @@ type Game struct {
 	moveMessages map[*Player]MoveMessage
 
 	previousTime time.Time
+	botClient    *BotClient
+	minPlayers   int
 }
 
 type PlayerMessage struct {
@@ -78,9 +86,34 @@ func (l *Circle) addArea(radius float32) {
 
 var runningGames = make(map[string]*Game)
 
+func (g *Game) manageBots() {
+	if g.botClient == nil {
+		return
+	}
+
+	// Only try to add bots if we have a minimum player requirement
+	if g.minPlayers <= 0 {
+		return
+	}
+
+	if len(g.players) < g.minPlayers {
+		botsNeeded := g.minPlayers - len(g.players)
+		for i := 0; i < botsNeeded; i++ {
+			_, err := g.botClient.CreateBot(g.ID, "medium")
+			if err != nil {
+				log.WithError(err).Warn("Failed to create bot, skipping bot management")
+				return // Skip further bot creation attempts if we encounter an error
+			}
+		}
+	}
+}
+
 func (g *Game) Run() {
 	ticker := time.NewTicker(30 * time.Millisecond)
 	defer ticker.Stop()
+
+	botCheckTicker := time.NewTicker(5 * time.Second)
+	defer botCheckTicker.Stop()
 
 	backupTicker := time.NewTicker(5 * time.Second)
 	defer backupTicker.Stop()
@@ -88,7 +121,6 @@ func (g *Game) Run() {
 	for {
 		select {
 		case player := <-g.connect:
-			log.Println("Player connected to lobby", g.ID)
 			g.players[player] = &PlayerData{
 				PlayerName: "TEMP",
 				PlayerId:   "TEMP",
@@ -99,9 +131,11 @@ func (g *Game) Run() {
 					Radius: 0,
 				},
 			}
+			log.Info("Player connected to lobby", g.ID)
+
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
-				log.Println("Player disconnected from lobby", g.ID)
+				log.Info("Player disconnected from lobby", g.ID)
 				g.playersToDel = append(g.playersToDel, player)
 
 				playerLeftMsg := PlayerLeftMessage{
@@ -113,6 +147,8 @@ func (g *Game) Run() {
 			}
 		case message := <-g.messages_in:
 			g.handleMessage(message)
+		case <-botCheckTicker.C:
+			g.manageBots()
 		case time := <-ticker.C:
 			g.loop(time)
 		case <-backupTicker.C:
@@ -146,6 +182,11 @@ func (g *Game) loop(time time.Time) {
 		}
 		playerData := g.players[player]
 		magnitude := math.Sqrt(float64(move.X*move.X + move.Y*move.Y))
+
+		// Skip movement update if magnitude is 0
+		if magnitude == 0 {
+			continue
+		}
 
 		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
 		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
@@ -226,29 +267,41 @@ func (g *Game) loop(time time.Time) {
 func (g *Game) broadcast(message interface{}) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
 	for player := range g.players {
-		player.send <- bytes
+		select {
+		case player.send <- bytes:
+			// Message sent successfully
+		default:
+			// Channel is full, skip this message
+			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+		}
 	}
 }
 
 func (g *Game) sendTo(player *Player, message interface{}) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
-	player.send <- bytes
+	select {
+	case player.send <- bytes:
+		// Message sent successfully
+	default:
+		// Channel is full, skip this message
+		log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+	}
 }
 
 func (g *Game) broadcastExcept(message interface{}, except *Player) {
 	bytes, err := json.Marshal(message)
 	if err != nil {
-		log.Println("Error marshalling message", err)
+		log.WithError(err).Error("Error marshalling message")
 		return
 	}
 
@@ -256,7 +309,13 @@ func (g *Game) broadcastExcept(message interface{}, except *Player) {
 		if player == except {
 			continue
 		}
-		player.send <- bytes
+		select {
+		case player.send <- bytes:
+			// Message sent successfully
+		default:
+			// Channel is full, skip this message
+			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
+		}
 	}
 }
 
@@ -264,7 +323,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 	var msg Message
 	err := json.Unmarshal(playerMessage.Message, &msg)
 	if err != nil {
-		log.Println("Error unmarshalling message", err)
+		log.WithError(err).Error("Error unmarshalling message")
 		return
 	}
 
@@ -272,7 +331,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var join JoinMessage
 		err := json.Unmarshal(msg.Data, &join)
 		if err != nil {
-			log.Println("Error unmarshalling join message", err)
+			log.WithError(err).Error("Error unmarshalling join message")
 			return
 		}
 
@@ -330,13 +389,11 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		var move MoveMessage
 		err := json.Unmarshal(msg.Data, &move)
 		if err != nil {
-			log.Println("Error unmarshalling move message", err)
+			log.WithError(err).Error("Error unmarshalling move message")
 			return
 		}
-		// sam zadnji move vsak frame je uporabljen
 		g.moveMessages[playerMessage.Player] = move
 	}
-
 }
 
 func (g *Game) onlinePlayers() []PlayerData {
@@ -350,7 +407,7 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
+func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *BotClient, minPlayers int) Game {
 	game := Game{
 		ID:            id,
 		players:       make(map[*Player]*PlayerData),
@@ -361,6 +418,8 @@ func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
 		messages_in:   make(chan PlayerMessage),
 		moveMessages:  make(map[*Player]MoveMessage),
 		previousTime:  time.Now(),
+		botClient:     botClient,
+		minPlayers:    minPlayers,
 	}
 
 	return game
@@ -369,8 +428,23 @@ func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
 func RestoreFromBackup() {
 	games := LoadBackup()
 
+	var botClient *BotClient
+	var minPlayers int
+
+	// Only try to set up bot client if bot service URL is configured
+	if gameConfig.BotServiceURL != "" {
+		var err error
+		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		if err != nil {
+			log.WithError(err).Info("Bot service unavailable, game will run without bots")
+		} else {
+			// Only set minPlayers if we successfully connected to the bot service
+			minPlayers = gameConfig.MinPlayers
+		}
+	}
+
 	for id, state := range games {
-		game := CreateGameStruct(id, state.Players, state.Food)
+		game := CreateGameStruct(id, state.Players, state.Food, botClient, minPlayers)
 		runningGames[id] = &game
 		go game.Run()
 		log.WithField("id", id).Info("Restored game from backup")
@@ -378,6 +452,11 @@ func RestoreFromBackup() {
 }
 
 func CreateGame() string {
+	if gameConfig == nil {
+		log.Error("Game configuration not set. Call SetConfig() before creating games.")
+		return ""
+	}
+
 	id := uuid.New().String()
 
 	food := make([]Food, NUM_FOOD)
@@ -391,11 +470,27 @@ func CreateGame() string {
 			},
 		}
 	}
-	game := CreateGameStruct(id, []PlayerData{}, food)
+
+	var botClient *BotClient
+	var minPlayers int
+
+	// Only try to set up bot client if bot service URL is configured
+	if gameConfig.BotServiceURL != "" {
+		var err error
+		botClient, err = NewBotClient(gameConfig.BotServiceURL)
+		if err != nil {
+			log.WithError(err).Info("Bot service unavailable, game will run without bots")
+		} else {
+			// Only set minPlayers if we successfully connected to the bot service
+			minPlayers = gameConfig.MinPlayers
+		}
+	}
+
+	game := CreateGameStruct(id, []PlayerData{}, food, botClient, minPlayers)
 	runningGames[id] = &game
 
 	go game.Run()
-	log.Println("Creating new game. There are now", len(runningGames), "running games")
+	log.Printf("Creating new game %s. There are now %d running games", id, len(runningGames))
 
 	return id
 }

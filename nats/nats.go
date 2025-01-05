@@ -6,14 +6,23 @@ import (
 )
 
 var conn *nats.Conn
+var url string
 
-func Connect(url string) {
-	c, err := nats.Connect(url)
-	if err != nil {
-		log.WithError(err).Fatal("Failed to connect to nats")
+func Connect(natsUrl string) {
+	url = natsUrl
+	if natsUrl == "" {
+		// No NATS server configured, do nothing.
+		log.Info("No nats server configured")
+		return
 	}
 
-	log.Info("Connected to nats at ", url)
+	c, err := nats.Connect(natsUrl)
+	if err != nil {
+		log.WithError(err).Error("Failed to connect to nats")
+		return
+	}
+
+	log.Info("Connected to nats at ", natsUrl)
 	conn = c
 }
 
