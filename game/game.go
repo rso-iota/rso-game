@@ -349,6 +349,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		}
 
 		// Backward compatibility
+		log.Info("info", playerMessage.Player.info)
 		if playerMessage.Player.info == (PlayerInfo{}) {
 			playerMessage.Player.info = PlayerInfo{
 				Username: join.PlayerName,
@@ -591,7 +592,9 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		playerInfo = data
+
 	}
+	log.Info("Player connected to game", playerInfo)
 
 	serveWebSocket(playerInfo, game, w, r)
 }
