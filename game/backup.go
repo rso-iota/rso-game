@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/gob"
 	"os"
-	"rso-game/config"
 
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -14,22 +13,22 @@ import (
 var ctx = context.Background()
 var client *redis.Client
 var hostname string = os.Getenv("HOSTNAME")
+var url string
 
-func InitBackup(conf config.Config) *redis.Client {
+func InitBackup(redisURL string) {
+	url = redisURL
 	client = redis.NewClient(&redis.Options{
-		Addr:     conf.BackupRedisUrl,
+		Addr:     url,
 		Password: "",
 		DB:       0,
 	})
 
 	_, err := client.Ping(ctx).Result()
 	if err != nil {
-		log.WithError(err).Fatal("Failed to connect to Redis")
+		log.WithError(err).Error("Failed to connect to Redis")
+	} else {
+		log.Info("Connected to Redis at ", url)
 	}
-
-	log.Info("Connected to Redis at ", conf.BackupRedisUrl)
-
-	return client
 }
 
 func ToBytes(data GameState) []byte {
@@ -56,17 +55,25 @@ func FromBytes(data []byte) GameState {
 	return game
 }
 
+func dbError(msg string, err error) {
+	log.WithError(err).Error(msg)
+	log.Debug("Trying to reconnect to Redis")
+	if client.Ping(ctx).Err() != nil {
+		InitBackup(url)
+	}
+}
+
 func SaveToBackup(key string, data GameState) {
 	err := client.Set(ctx, hostname+":"+key, ToBytes(data), 0).Err()
 	if err != nil {
-		log.WithError(err).Error("Failed to save game state")
+		dbError("Failed to save game state", err)
 	}
 }
 
 func LoadBackup() map[string]GameState {
 	keys, err := client.Keys(ctx, hostname+":*").Result()
 	if err != nil {
-		log.WithError(err).Error("Failed to get keys")
+		dbError("Failed to get keys", err)
 	}
 
 	games := make(map[string]GameState)
@@ -74,7 +81,7 @@ func LoadBackup() map[string]GameState {
 	for _, key := range keys {
 		bytes, err := client.Get(ctx, key).Result()
 		if err != nil {
-			log.WithError(err).Error("Failed to get game state")
+			dbError("Failed to get game state", err)
 		}
 
 		gameId := key[len(hostname)+1:]

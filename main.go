@@ -12,7 +12,7 @@ func main() {
 
 	game.SetGlobalConfig(conf)
 
-	game.InitBackup(conf)
+	game.InitBackup(conf.BackupRedisUrl)
 	nats.Connect(conf.NatsURL)
 
 	game.RestoreFromBackup()
