@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	pb "rso-game/grpc/bot"
+	pb "rso-game/grpc"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -10,50 +9,17 @@ import (
 	"rso-game/game"
 	"strings"
 
-	pb "rso-game/grpc/game"
-
 	log "github.com/sirupsen/logrus"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
-
-type GrpcServer struct {
-	pb.UnimplementedGameServiceServer
-}
 
 var podID string
 var hostname string
 
-func (s *GrpcServer) CreateGame(_ context.Context, _ *pb.Empty) (*pb.GameLocation, error) {
-	id := game.CreateGame()
-	return &pb.GameLocation{Id: &pb.GameID{Id: id}, Hostname: hostname}, nil
-}
-
-func (s *GrpcServer) DeleteGame(_ context.Context, gameId *pb.GameID) (*pb.GameID, error) {
-	id := gameId.GetId()
-	err := game.DeleteGame(id)
-	if err != nil {
-		return nil, err
-	}
-	return &pb.GameID{Id: id}, nil
-}
-
-func (s *GrpcServer) LiveData(_ context.Context, gameId *pb.GameID) (*pb.GameData, error) {
-	id := gameId.GetId()
-	players, err := game.GetPlayerSizes(id)
-	if err != nil {
-		return nil, err
-	}
-
-	return players, nil
-}
-
-func serveHTTP(l net.Listener, config config.Config) {
+func serveExternalHTTP(l net.Listener, config config.Config) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/connect/{gameID}", game.HandleNewConnection)
 
-	log.Println("Starting HTTP server on " + l.Addr().String())
+	log.Println("Starting external HTTP server on " + config.ExternalHttpPort)
 
 	// Self contained app - for testing
 	if config.TestServer {
@@ -70,14 +36,13 @@ func serveHTTP(l net.Listener, config config.Config) {
 	}
 }
 
-func serveGRPC(l net.Listener) {
-	grpcServer := grpc.NewServer()
-	pb.RegisterGameServiceServer(grpcServer, &GrpcServer{})
+func serverInternalHTTP(l net.Listener, config config.Config) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/game", gameCRUDhandler)
 
-	reflection.Register(grpcServer)
+	log.Println("Starting internal HTTP server on " + config.InternalHttpPort)
 
-	log.Println("Starting gRPC server on " + l.Addr().String())
-	err := grpcServer.Serve(l)
+	err := http.Serve(l, mux)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -91,33 +56,18 @@ func Start(config config.Config) {
 		hostname = "game-svc-" + podID
 	}
 
-	httpListen, err := net.Listen("tcp", ":"+config.HttpPort)
+	externalHttpListen, err := net.Listen("tcp", ":"+config.ExternalHttpPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	grpcListen, err := net.Listen("tcp", ":"+config.GrpcPort)
+	internalHttpListen, err := net.Listen("tcp", ":"+config.InternalHttpPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go serveHTTP(httpListen, config)
-	go serveGRPC(grpcListen)
-
-	internalListener, err := net.Listen("tcp", ":"+config.InternalHttpPort)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/game", newGameHandler)
-
-	log.Println("Starting internal HTTP server on " + config.InternalHttpPort)
-
-	err = http.Serve(internalListener, mux)
-	if err != nil {
-		log.Fatal(err)
-	}
+	go serveExternalHTTP(externalHttpListen, config)
+	serverInternalHTTP(internalHttpListen, config)
 }
 
 // These are the handlers for the self-contained app, not needed in the cluster
@@ -138,4 +88,25 @@ func newGameHandler(w http.ResponseWriter, r *http.Request) {
 func gameListHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(game.RunningGameIDs())
+}
+
+func deleteGameHandler(w http.ResponseWriter, r *http.Request) {
+	gameID := r.URL.Query().Get("id")
+	err := game.DeleteGame(gameID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func gameCRUDhandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		newGameHandler(w, r)
+	case http.MethodGet:
+		gameListHandler(w, r)
+	case http.MethodDelete:
+		deleteGameHandler(w, r)
+	}
 }

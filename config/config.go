@@ -9,8 +9,6 @@ import (
 )
 
 type Config struct {
-	HttpPort         string `env:"HTTP_PORT"`
-	GrpcPort         string `env:"GRPC_PORT"`
 	NumTestGames     int    `env:"NUM_TEST_GAMES"`
 	TestServer       bool   `env:"TEST_SERVER"`
 	LogJSON          bool   `env:"LOG_JSON"`
@@ -20,6 +18,7 @@ type Config struct {
 	BackupRedisUrl   string `env:"BACKUP_REDIS_URL"`
 	MinPlayers       int    `env:"MIN_PLAYERS"`
 	BotServiceURL    string `env:"BOT_SERVICE_URL"`
+	ExternalHttpPort string `env:"EXTERNAL_HTTP_PORT"`
 	InternalHttpPort string `env:"INTERNAL_HTTP_PORT"`
 }
 

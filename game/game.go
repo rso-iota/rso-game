@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"rso-game/config"
-	pb "rso-game/grpc/game"
 	"rso-game/nats"
 	"time"
 
@@ -531,24 +530,24 @@ func DeleteGame(id string) error {
 	return nil
 }
 
-func GetPlayerSizes(id string) (*pb.GameData, error) {
-	game, ok := runningGames[id]
-	if !ok {
-		return nil, errors.New("Game not found")
-	}
+// func GetPlayerSizes(id string) (*pb.GameData, error) {
+// 	game, ok := runningGames[id]
+// 	if !ok {
+// 		return nil, errors.New("Game not found")
+// 	}
 
-	data := &pb.GameData{
-		Players: make([]*pb.Player, 0, len(game.players)),
-	}
+// 	data := &pb.GameData{
+// 		Players: make([]*pb.Player, 0, len(game.players)),
+// 	}
 
-	for _, player := range game.players {
-		data.Players = append(data.Players, &pb.Player{
-			Username: player.PlayerName,
-			Size:     player.Circle.Radius,
-		})
-	}
-	return data, nil
-}
+// 	for _, player := range game.players {
+// 		data.Players = append(data.Players, &pb.Player{
+// 			Username: player.PlayerName,
+// 			Size:     player.Circle.Radius,
+// 		})
+// 	}
+// 	return data, nil
+// }
 
 func CreateGame() string {
 	id := uuid.New().String()
