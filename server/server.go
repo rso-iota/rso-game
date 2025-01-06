@@ -103,17 +103,17 @@ func Start(config config.Config) {
 	go serveHTTP(httpListen, config)
 	go serveGRPC(grpcListen)
 
-	newGameHttpListen, err := net.Listen("tcp", ":"+config.CreateGamePort)
+	internalListener, err := net.Listen("tcp", ":"+config.InternalHttpPort)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/createGame", newGameHandler)
+	mux.HandleFunc("/game", newGameHandler)
 
-	log.Println("Starting internal HTTP server on " + config.CreateGamePort)
+	log.Println("Starting internal HTTP server on " + config.InternalHttpPort)
 
-	err = http.Serve(newGameHttpListen, mux)
+	err = http.Serve(internalListener, mux)
 	if err != nil {
 		log.Fatal(err)
 	}

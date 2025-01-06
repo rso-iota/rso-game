@@ -9,18 +9,18 @@ import (
 )
 
 type Config struct {
-	HttpPort       string `env:"HTTP_PORT"`
-	GrpcPort       string `env:"GRPC_PORT"`
-	NumTestGames   int    `env:"NUM_TEST_GAMES"`
-	TestServer     bool   `env:"TEST_SERVER"`
-	LogJSON        bool   `env:"LOG_JSON"`
-	NatsURL        string `env:"NATS_URL"`
-	AuthEndpoint   string `env:"AUTH_EP"`
-	RequireAuth    bool   `env:"REQUIRE_AUTH"`
-	BackupRedisUrl string `env:"BACKUP_REDIS_URL"`
-	MinPlayers     int    `env:"MIN_PLAYERS"`
-	BotServiceURL  string `env:"BOT_SERVICE_URL"`
-	CreateGamePort string `env:"CREATE_GAME_HTTP_PORT"`
+	HttpPort         string `env:"HTTP_PORT"`
+	GrpcPort         string `env:"GRPC_PORT"`
+	NumTestGames     int    `env:"NUM_TEST_GAMES"`
+	TestServer       bool   `env:"TEST_SERVER"`
+	LogJSON          bool   `env:"LOG_JSON"`
+	NatsURL          string `env:"NATS_URL"`
+	AuthEndpoint     string `env:"AUTH_EP"`
+	RequireAuth      bool   `env:"REQUIRE_AUTH"`
+	BackupRedisUrl   string `env:"BACKUP_REDIS_URL"`
+	MinPlayers       int    `env:"MIN_PLAYERS"`
+	BotServiceURL    string `env:"BOT_SERVICE_URL"`
+	InternalHttpPort string `env:"INTERNAL_HTTP_PORT"`
 }
 
 func Init() Config {
