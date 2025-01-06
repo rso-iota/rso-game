@@ -19,16 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GameService_CreateGame_FullMethodName       = "/GameService/CreateGame"
-	GameService_ListRunningGames_FullMethodName = "/GameService/ListRunningGames"
+	GameService_CreateGame_FullMethodName = "/GameService/CreateGame"
+	GameService_DeleteGame_FullMethodName = "/GameService/DeleteGame"
+	GameService_LiveData_FullMethodName   = "/GameService/LiveData"
 )
 
 // GameServiceClient is the client API for GameService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type GameServiceClient interface {
-	CreateGame(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameID, error)
-	ListRunningGames(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameIDList, error)
+	CreateGame(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameLocation, error)
+	DeleteGame(ctx context.Context, in *GameID, opts ...grpc.CallOption) (*GameID, error)
+	LiveData(ctx context.Context, in *GameID, opts ...grpc.CallOption) (*GameData, error)
 }
 
 type gameServiceClient struct {
@@ -39,9 +41,9 @@ func NewGameServiceClient(cc grpc.ClientConnInterface) GameServiceClient {
 	return &gameServiceClient{cc}
 }
 
-func (c *gameServiceClient) CreateGame(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameID, error) {
+func (c *gameServiceClient) CreateGame(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameLocation, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GameID)
+	out := new(GameLocation)
 	err := c.cc.Invoke(ctx, GameService_CreateGame_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -49,10 +51,20 @@ func (c *gameServiceClient) CreateGame(ctx context.Context, in *Empty, opts ...g
 	return out, nil
 }
 
-func (c *gameServiceClient) ListRunningGames(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*GameIDList, error) {
+func (c *gameServiceClient) DeleteGame(ctx context.Context, in *GameID, opts ...grpc.CallOption) (*GameID, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GameIDList)
-	err := c.cc.Invoke(ctx, GameService_ListRunningGames_FullMethodName, in, out, cOpts...)
+	out := new(GameID)
+	err := c.cc.Invoke(ctx, GameService_DeleteGame_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gameServiceClient) LiveData(ctx context.Context, in *GameID, opts ...grpc.CallOption) (*GameData, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GameData)
+	err := c.cc.Invoke(ctx, GameService_LiveData_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +75,9 @@ func (c *gameServiceClient) ListRunningGames(ctx context.Context, in *Empty, opt
 // All implementations must embed UnimplementedGameServiceServer
 // for forward compatibility.
 type GameServiceServer interface {
-	CreateGame(context.Context, *Empty) (*GameID, error)
-	ListRunningGames(context.Context, *Empty) (*GameIDList, error)
+	CreateGame(context.Context, *Empty) (*GameLocation, error)
+	DeleteGame(context.Context, *GameID) (*GameID, error)
+	LiveData(context.Context, *GameID) (*GameData, error)
 	mustEmbedUnimplementedGameServiceServer()
 }
 
@@ -75,11 +88,14 @@ type GameServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedGameServiceServer struct{}
 
-func (UnimplementedGameServiceServer) CreateGame(context.Context, *Empty) (*GameID, error) {
+func (UnimplementedGameServiceServer) CreateGame(context.Context, *Empty) (*GameLocation, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateGame not implemented")
 }
-func (UnimplementedGameServiceServer) ListRunningGames(context.Context, *Empty) (*GameIDList, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListRunningGames not implemented")
+func (UnimplementedGameServiceServer) DeleteGame(context.Context, *GameID) (*GameID, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteGame not implemented")
+}
+func (UnimplementedGameServiceServer) LiveData(context.Context, *GameID) (*GameData, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LiveData not implemented")
 }
 func (UnimplementedGameServiceServer) mustEmbedUnimplementedGameServiceServer() {}
 func (UnimplementedGameServiceServer) testEmbeddedByValue()                     {}
@@ -120,20 +136,38 @@ func _GameService_CreateGame_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GameService_ListRunningGames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Empty)
+func _GameService_DeleteGame_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GameID)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GameServiceServer).ListRunningGames(ctx, in)
+		return srv.(GameServiceServer).DeleteGame(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GameService_ListRunningGames_FullMethodName,
+		FullMethod: GameService_DeleteGame_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GameServiceServer).ListRunningGames(ctx, req.(*Empty))
+		return srv.(GameServiceServer).DeleteGame(ctx, req.(*GameID))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GameService_LiveData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GameID)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameServiceServer).LiveData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameService_LiveData_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameServiceServer).LiveData(ctx, req.(*GameID))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -150,8 +184,12 @@ var GameService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GameService_CreateGame_Handler,
 		},
 		{
-			MethodName: "ListRunningGames",
-			Handler:    _GameService_ListRunningGames_Handler,
+			MethodName: "DeleteGame",
+			Handler:    _GameService_DeleteGame_Handler,
+		},
+		{
+			MethodName: "LiveData",
+			Handler:    _GameService_LiveData_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"rso-game/config"
 	"rso-game/game"
+	"strings"
 
 	pb "rso-game/grpc/game"
 
@@ -20,14 +22,30 @@ type GrpcServer struct {
 	pb.UnimplementedGameServiceServer
 }
 
-func (s *GrpcServer) CreateGame(_ context.Context, _ *pb.Empty) (*pb.GameID, error) {
+var hostname string
+
+func (s *GrpcServer) CreateGame(_ context.Context, _ *pb.Empty) (*pb.GameLocation, error) {
 	id := game.CreateGame()
+	return &pb.GameLocation{Id: &pb.GameID{Id: id}, Hostname: hostname}, nil
+}
+
+func (s *GrpcServer) DeleteGame(_ context.Context, gameId *pb.GameID) (*pb.GameID, error) {
+	id := gameId.GetId()
+	err := game.DeleteGame(id)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.GameID{Id: id}, nil
 }
 
-func (s *GrpcServer) ListRunningGames(_ context.Context, _ *pb.Empty) (*pb.GameIDList, error) {
-	ids := game.RunningGameIDs()
-	return &pb.GameIDList{Ids: ids}, nil
+func (s *GrpcServer) LiveData(_ context.Context, gameId *pb.GameID) (*pb.GameData, error) {
+	id := gameId.GetId()
+	players, err := game.GetPlayerSizes(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return players, nil
 }
 
 func serveHTTP(l net.Listener, config config.Config) {
@@ -65,6 +83,13 @@ func serveGRPC(l net.Listener) {
 }
 
 func Start(config config.Config) {
+	hostname = os.Getenv("HOSTNAME")
+	if strings.Contains(hostname, "statefulset") {
+		splits := strings.Split(hostname, "-")
+		podID := splits[len(splits)-1]
+		hostname = "game-svc-" + podID
+	}
+
 	httpListen, err := net.Listen("tcp", ":"+config.HttpPort)
 	if err != nil {
 		log.Fatal(err)

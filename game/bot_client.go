@@ -42,9 +42,10 @@ func (bc *BotClient) CreateBot(gameID string, botID string, token string, diffic
 	hostname := os.Getenv("HOSTNAME")
 	if strings.Contains(hostname, "statefulset") {
 		splits := strings.Split(hostname, "-")
-		botID = splits[len(splits)-1]
-		hostname = "game-svc-" + botID
+		podID := splits[len(splits)-1]
+		hostname = "game-svc-" + podID
 	}
+
 	req := &pb.CreateBotRequest{
 		BotId:       botID,
 		AccessToken: token,

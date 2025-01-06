@@ -2,10 +2,12 @@ package game
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"math/rand/v2"
 	"net/http"
 	"rso-game/config"
+	pb "rso-game/grpc/game"
 	"rso-game/nats"
 	"time"
 
@@ -43,7 +45,8 @@ type Game struct {
 	botClient    *BotClient
 	minPlayers   int
 
-	delta float64
+	delta     float64
+	terminate bool
 }
 
 type PlayerMessage struct {
@@ -114,9 +117,25 @@ func (g *Game) manageBots() {
 	}
 }
 
+func (g *Game) Stop() {
+	g.terminate = true
+}
+
+func (g *Game) Terminate() {
+	closeMessage := CloseMessage{
+		Type:   "close",
+		Reason: "Game stopped",
+	}
+
+	g.broadcast(closeMessage)
+	DeleteBackup(g.ID)
+
+	log.Info("Game ", g.ID, " stopped")
+}
+
 func (g *Game) Run() {
 	g.manageBots()
-	gameLoopTicker := time.NewTicker(30 * time.Millisecond)
+	gameLoopTicker := time.NewTicker(50 * time.Millisecond)
 	defer gameLoopTicker.Stop()
 
 	botCheckTicker := time.NewTicker(5 * time.Second)
@@ -169,6 +188,10 @@ func (g *Game) Run() {
 			g.previousTime = time
 			if !g.isPaused {
 				g.loop()
+			}
+			if g.terminate {
+				g.Terminate()
+				return
 			}
 		case <-backupTicker.C:
 			state := g.GetGameState()
@@ -493,6 +516,38 @@ func RestoreFromBackup() {
 		go game.Run()
 		log.WithField("id", id).Info("Restored game from backup")
 	}
+}
+
+func DeleteGame(id string) error {
+	game, ok := runningGames[id]
+	if !ok {
+		return errors.New("Game not found")
+	}
+
+	game.Stop()
+	delete(runningGames, id)
+	log.Printf("Deleted game %s. There are now %d running games", id, len(runningGames))
+
+	return nil
+}
+
+func GetPlayerSizes(id string) (*pb.GameData, error) {
+	game, ok := runningGames[id]
+	if !ok {
+		return nil, errors.New("Game not found")
+	}
+
+	data := &pb.GameData{
+		Players: make([]*pb.Player, 0, len(game.players)),
+	}
+
+	for _, player := range game.players {
+		data.Players = append(data.Players, &pb.Player{
+			Username: player.PlayerName,
+			Size:     player.Circle.Radius,
+		})
+	}
+	return data, nil
 }
 
 func CreateGame() string {

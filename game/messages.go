@@ -11,6 +11,11 @@ type JoinMessage struct {
 	PlayerName string `json:"playerName"`
 }
 
+type CloseMessage struct {
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
 type MoveMessage struct {
 	X float32 `json:"x"`
 	Y float32 `json:"y"`

@@ -80,3 +80,11 @@ func LoadBackup() map[string]GameState {
 
 	return games
 }
+
+func DeleteBackup(key string) {
+	log.Info("Deleting backup for game ", key)
+	err := client.Del(ctx, hostname+":"+key).Err()
+	if err != nil {
+		log.WithError(err).Error("Failed to delete game state")
+	}
+}
