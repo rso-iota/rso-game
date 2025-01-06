@@ -22,6 +22,7 @@ type GrpcServer struct {
 	pb.UnimplementedGameServiceServer
 }
 
+var podID string
 var hostname string
 
 func (s *GrpcServer) CreateGame(_ context.Context, _ *pb.Empty) (*pb.GameLocation, error) {
@@ -86,7 +87,7 @@ func Start(config config.Config) {
 	hostname = os.Getenv("HOSTNAME")
 	if strings.Contains(hostname, "statefulset") {
 		splits := strings.Split(hostname, "-")
-		podID := splits[len(splits)-1]
+		podID = splits[len(splits)-1]
 		hostname = "game-svc-" + podID
 	}
 
@@ -131,7 +132,7 @@ func serveScript(w http.ResponseWriter, r *http.Request) {
 func newGameHandler(w http.ResponseWriter, r *http.Request) {
 	id := game.CreateGame()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"id": id, "hostname": hostname})
+	json.NewEncoder(w).Encode(map[string]string{"id": id, "serverId": podID})
 }
 
 func gameListHandler(w http.ResponseWriter, r *http.Request) {
