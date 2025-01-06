@@ -101,7 +101,22 @@ func Start(config config.Config) {
 	}
 
 	go serveHTTP(httpListen, config)
-	serveGRPC(grpcListen)
+	go serveGRPC(grpcListen)
+
+	newGameHttpListen, err := net.Listen("tcp", ":"+config.CreateGamePort)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/createGame", newGameHandler)
+
+	log.Println("Starting internal HTTP server on " + config.CreateGamePort)
+
+	err = http.Serve(newGameHttpListen, mux)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 // These are the handlers for the self-contained app, not needed in the cluster
@@ -114,9 +129,9 @@ func serveScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func newGameHandler(w http.ResponseWriter, r *http.Request) {
-	game := game.CreateGame()
-
-	w.Write([]byte(game))
+	id := game.CreateGame()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": id, "hostname": hostname})
 }
 
 func gameListHandler(w http.ResponseWriter, r *http.Request) {
