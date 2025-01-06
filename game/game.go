@@ -24,6 +24,8 @@ func SetGlobalConfig(c config.Config) {
 type Game struct {
 	ID string
 
+	humanPlayers  int
+	isPaused      bool
 	players       map[*Player]*PlayerData
 	playersToDel  []*Player
 	loadedPlayers []PlayerData
@@ -40,6 +42,8 @@ type Game struct {
 	previousTime time.Time
 	botClient    *BotClient
 	minPlayers   int
+
+	delta float64
 }
 
 type PlayerMessage struct {
@@ -98,6 +102,8 @@ func (g *Game) manageBots() {
 		for i := 0; i < botsNeeded; i++ {
 			token := uuid.New().String()
 			botName := "bot-" + token[:4]
+
+			log.Info("Requesting a new bot ", botName, " for game ", g.ID)
 			_, err := g.botClient.CreateBot(g.ID, botName, token, "medium")
 			if err != nil {
 				log.WithError(err).Warn("Failed to create bot, skipping bot management")
@@ -109,8 +115,9 @@ func (g *Game) manageBots() {
 }
 
 func (g *Game) Run() {
-	ticker := time.NewTicker(30 * time.Millisecond)
-	defer ticker.Stop()
+	g.manageBots()
+	gameLoopTicker := time.NewTicker(30 * time.Millisecond)
+	defer gameLoopTicker.Stop()
 
 	botCheckTicker := time.NewTicker(5 * time.Second)
 	defer botCheckTicker.Stop()
@@ -131,7 +138,6 @@ func (g *Game) Run() {
 					Radius: 0,
 				},
 			}
-			log.Info("Player connected to lobby", g.ID)
 
 		case player := <-g.disconnect:
 			if p, ok := g.players[player]; ok {
@@ -143,14 +149,27 @@ func (g *Game) Run() {
 					Data: *p,
 				}
 
+				if !p.IsBot {
+					g.humanPlayers--
+					log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
+				}
+
+				if g.humanPlayers <= 0 {
+					log.Info("No human players left in game ", g.ID, ", pausing game")
+				}
+
 				g.broadcast(playerLeftMsg)
 			}
 		case message := <-g.messages_in:
 			g.handleMessage(message)
 		case <-botCheckTicker.C:
 			g.manageBots()
-		case time := <-ticker.C:
-			g.loop(time)
+		case time := <-gameLoopTicker.C:
+			g.delta = time.Sub(g.previousTime).Seconds()
+			g.previousTime = time
+			if !g.isPaused {
+				g.loop()
+			}
 		case <-backupTicker.C:
 			state := g.GetGameState()
 			SaveToBackup(g.ID, state)
@@ -165,9 +184,8 @@ func (g *Game) GetGameState() GameState {
 	}
 }
 
-func (g *Game) loop(time time.Time) {
-	delta := time.Sub(g.previousTime).Seconds()
-	g.previousTime = time
+func (g *Game) loop() {
+	g.isPaused = g.humanPlayers <= 0
 
 	for _, player := range g.playersToDel {
 		delete(g.players, player)
@@ -187,9 +205,8 @@ func (g *Game) loop(time time.Time) {
 		if magnitude == 0 {
 			continue
 		}
-
-		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
-		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
+		playerData.Circle.X += move.X * float32(g.delta) * float32(PLAYER_SPEED) / float32(magnitude)
+		playerData.Circle.Y += move.Y * float32(g.delta) * float32(PLAYER_SPEED) / float32(magnitude)
 
 		updatedPlayers = append(updatedPlayers, *playerData)
 	}
@@ -349,7 +366,6 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		}
 
 		// Backward compatibility
-		log.Info("info", playerMessage.Player.info)
 		if playerMessage.Player.info == (PlayerInfo{}) {
 			playerMessage.Player.info = PlayerInfo{
 				Username: join.PlayerName,
@@ -377,6 +393,16 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 				},
 				IsBot: playerMessage.Player.info.IsBot,
 			}
+		}
+
+		if !data.IsBot {
+			if g.humanPlayers == 0 {
+				log.Info("Human player joined game ", g.ID, ", resuming game")
+				g.isPaused = false
+			}
+
+			g.humanPlayers++
+			log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
 		}
 
 		g.players[playerMessage.Player] = data
@@ -425,6 +451,7 @@ func (g *Game) onlinePlayers() []PlayerData {
 func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *BotClient, minPlayers int) Game {
 	game := Game{
 		ID:            id,
+		humanPlayers:  0,
 		players:       make(map[*Player]*PlayerData),
 		loadedPlayers: players,
 		food:          food,
@@ -447,19 +474,20 @@ func RestoreFromBackup() {
 	var botClient *BotClient
 	var minPlayers int
 
-	// Only try to set up bot client if bot service URL is configured
-	if conf.BotServiceURL != "" {
-		var err error
-		botClient, err = NewBotClient(conf.BotServiceURL)
-		if err != nil {
-			log.WithError(err).Info("Bot service unavailable, game will run without bots")
-		} else {
-			// Only set minPlayers if we successfully connected to the bot service
-			minPlayers = conf.MinPlayers
-		}
-	}
-
 	for id, state := range games {
+		// Only try to set up bot client if bot service URL is configured
+		if conf.BotServiceURL != "" {
+			var err error
+			botClient, err = NewBotClient(conf.BotServiceURL)
+			if err != nil {
+				log.WithError(err).Info("Bot service unavailable, game will run without bots")
+			} else {
+				// Only set minPlayers if we successfully connected to the bot service
+				minPlayers = conf.MinPlayers
+				log.Info("Bot service available, will run with bots")
+			}
+		}
+
 		game := CreateGameStruct(id, state.Players, state.Food, botClient, minPlayers)
 		runningGames[id] = &game
 		go game.Run()
@@ -494,6 +522,7 @@ func CreateGame() string {
 		} else {
 			// Only set minPlayers if we successfully connected to the bot service
 			minPlayers = conf.MinPlayers
+			log.Info("Bot service available, will run with bots")
 		}
 	}
 
@@ -533,19 +562,9 @@ func (e AuthError) Error() string {
 	return e.Message
 }
 
-func Authorize(game *Game, token string) (PlayerInfo, AuthError) {
+func Authorize(token string) (PlayerInfo, AuthError) {
 	if token == "" {
 		return PlayerInfo{}, AuthError{"No token provided", http.StatusUnauthorized}
-	}
-
-	if name, ok := game.botTokens[token]; ok {
-		delete(game.botTokens, token)
-
-		return PlayerInfo{
-			Username: name,
-			Id:       name,
-			IsBot:    true,
-		}, AuthError{}
 	}
 
 	req, err := http.NewRequest("GET", conf.AuthEndpoint, nil)
@@ -574,6 +593,20 @@ func Authorize(game *Game, token string) (PlayerInfo, AuthError) {
 	return playerInfo, AuthError{}
 }
 
+func IsBot(game *Game, token string) (bool, PlayerInfo) {
+	if name, ok := game.botTokens[token]; ok {
+		delete(game.botTokens, token)
+
+		return true, PlayerInfo{
+			Username: name,
+			Id:       name,
+			IsBot:    true,
+		}
+	}
+
+	return false, PlayerInfo{}
+}
+
 func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	game, ok := runningGames[gameID]
@@ -583,10 +616,18 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token := r.URL.Query().Get("token")
+
+	bot, botInfo := IsBot(game, token)
+	if bot {
+		log.Info("Bot ", botInfo.Username, " connected to game ", gameID)
+		serveWebSocket(botInfo, game, w, r)
+		return
+	}
+
 	playerInfo := PlayerInfo{}
 	if conf.RequireAuth {
-		token := r.URL.Query().Get("token")
-		data, err := Authorize(game, token)
+		data, err := Authorize(token)
 		if err != (AuthError{}) {
 			http.Error(w, err.Message, err.Code)
 			log.WithError(err).Warn("Failed to authorize player")

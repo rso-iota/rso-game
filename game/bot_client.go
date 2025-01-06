@@ -45,7 +45,6 @@ func (bc *BotClient) CreateBot(gameID string, botID string, token string, diffic
 		botID = splits[len(splits)-1]
 		hostname = "game-svc-" + botID
 	}
-
 	req := &pb.CreateBotRequest{
 		BotId:       botID,
 		AccessToken: token,
