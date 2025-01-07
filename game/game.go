@@ -244,7 +244,7 @@ func SendToReplays(key string, data GameState) {
 		log.WithError(err).Error("Error marshalling game state")
 		return
 	}
-	log.Info("Publishing game state to NATS")
+	log.Debug("Publishing game state to NATS")
 	nats_channel := "game_state." + key
 	nats.Publish(nats_channel, stateBytes)
 }
