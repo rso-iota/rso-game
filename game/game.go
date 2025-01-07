@@ -12,6 +12,7 @@ import (
 	___ "rso-game/grpc/lobby"
 	"rso-game/nats"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,8 +32,8 @@ func SetGlobalConfig(c config.Config) {
 type Game struct {
 	ID string
 
-	humanPlayers  int
-	botPlayers    int
+	humanPlayers  atomic.Int32
+	botPlayers    atomic.Int32
 	players       map[*Player]*PlayerData
 	playersToDel  []*Player
 	loadedPlayers []PlayerData
@@ -173,10 +174,10 @@ func (g *Game) Run() {
 				}
 
 				if !p.IsBot {
-					g.humanPlayers--
-					log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
+					g.humanPlayers.Add(-1)
+					log.Info("There are now ", g.humanPlayers.Load(), " human players in game ", g.ID)
 				} else {
-					g.botPlayers--
+					g.botPlayers.Add(-1)
 				}
 
 				g.broadcast(playerLeftMsg)
@@ -209,8 +210,8 @@ func (g *Game) loop(t time.Time) {
 	delta := t.Sub(g.previousTime).Seconds()
 	g.previousTime = t
 
-	if g.humanPlayers <= 0 && g.botPlayers > 0 {
-		go g.disconnectBots(g.botPlayers)
+	if g.humanPlayers.Load() <= 0 && g.botPlayers.Load() > 0 {
+		go g.disconnectBots(int(g.botPlayers.Load()))
 	}
 
 	if len(g.players) == 0 {
@@ -220,7 +221,7 @@ func (g *Game) loop(t time.Time) {
 		g.gameTerminateTimer.Reset(time.Duration(conf.TerminateMinutes) * time.Minute)
 	}
 
-	if g.humanPlayers > 0 && len(g.players) < g.minPlayers {
+	if g.humanPlayers.Load() > 0 && len(g.players) < g.minPlayers {
 		g.manageBots()
 	}
 
@@ -454,10 +455,10 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 				g.isPaused = false
 			}
 
-			g.humanPlayers++
-			log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
+			g.humanPlayers.Add(1)
+			log.Info("There are now ", g.humanPlayers.Load(), " human players in game ", g.ID)
 		} else {
-			g.botPlayers++
+			g.botPlayers.Add(1)
 		}
 
 		g.players[playerMessage.Player] = data
