@@ -1,4 +1,4 @@
-package bots
+package grpc
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"rso-game/circuitbreaker"
-	pb "rso-game/grpc"
+	pb "rso-game/grpc/bots"
 
 	log "github.com/sirupsen/logrus"
 
@@ -22,10 +22,10 @@ type BotClient struct {
 }
 
 var botClient *BotClient
-var url string
+var botsUrl string
 
 func InitBotClient(address string) {
-	url = address
+	botsUrl = address
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.WithError(err).Error("failed to connect to bot service")
@@ -68,10 +68,10 @@ func CreateBot(gameID string, botID string, token string, difficulty string) err
 		return nil
 	}()
 
-	_, err := circuitbreaker.GrpcBreaker.Execute(func() (*pb.CreateBotResponse, error) {
+	_, err := circuitbreaker.BotsBreaker.Execute(func() (*pb.CreateBotResponse, error) {
 		if botClient.conn == nil || botClient.conn.GetState() == connectivity.Shutdown {
 			log.Info("Trying to reconnect to bot service")
-			conn, err := grpc.NewClient(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			conn, err := grpc.NewClient(botsUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				return nil, err
 			}

@@ -6,10 +6,11 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
-	"rso-game/bots"
 	"rso-game/circuitbreaker"
 	"rso-game/config"
+	"rso-game/grpc"
 	"rso-game/nats"
+	"runtime"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,8 +50,9 @@ type Game struct {
 
 	terminate bool
 
-	gameLoopTicker *time.Ticker
-	isPaused       bool
+	gameLoopTicker     *time.Ticker
+	isPaused           bool
+	gameTerminateTimer *time.Timer
 }
 
 type PlayerMessage struct {
@@ -95,7 +97,7 @@ func (l *Circle) addArea(radius float32) {
 var runningGames = make(map[string]*Game)
 
 func (g *Game) manageBots() {
-	if circuitbreaker.GrpcBreaker.State() == gobreaker.StateOpen {
+	if circuitbreaker.BotsBreaker.State() == gobreaker.StateOpen {
 		return
 	}
 
@@ -105,7 +107,7 @@ func (g *Game) manageBots() {
 		botName := "bot-" + token[:4]
 
 		log.Info("Requesting a new bot ", botName, " for game ", g.ID)
-		err := bots.CreateBot(g.ID, botName, token, "medium")
+		err := grpc.CreateBot(g.ID, botName, token, "medium")
 		if err != nil {
 			log.WithError(err).Warn("Failed to create bot, skipping bot management")
 			return // Skip further bot creation attempts if we encounter an error
@@ -127,12 +129,18 @@ func (g *Game) Terminate() {
 	g.broadcast(closeMessage)
 	DeleteBackup(g.ID)
 
+	delete(runningGames, g.ID)
 	log.Info("Game ", g.ID, " stopped")
+
+	runtime.Goexit()
 }
 
 func (g *Game) Run() {
 	g.gameLoopTicker = time.NewTicker(TICK_RATE)
 	defer g.gameLoopTicker.Stop()
+
+	g.gameTerminateTimer = time.NewTimer(time.Hour)
+	g.gameTerminateTimer.Stop()
 
 	backupTicker := time.NewTicker(5 * time.Second)
 	defer backupTicker.Stop()
@@ -176,11 +184,13 @@ func (g *Game) Run() {
 			g.loop(time)
 			if g.terminate {
 				g.Terminate()
-				return
 			}
 		case <-backupTicker.C:
 			state := g.GetGameState()
 			SaveToBackup(g.ID, state)
+		case <-g.gameTerminateTimer.C:
+			log.WithField("id", g.ID).Info("Terminating game due to inactivity")
+			g.Terminate()
 		}
 	}
 }
@@ -192,18 +202,19 @@ func (g *Game) GetGameState() GameState {
 	}
 }
 
-func (g *Game) loop(time time.Time) {
-	delta := time.Sub(g.previousTime).Seconds()
-	g.previousTime = time
+func (g *Game) loop(t time.Time) {
+	delta := t.Sub(g.previousTime).Seconds()
+	g.previousTime = t
 
 	if g.humanPlayers <= 0 && g.botPlayers > 0 {
-		log.WithField("id", g.ID).Info("No human players in game ", g.ID, ", removing bots and pausing game")
 		go g.disconnectBots(g.botPlayers)
 	}
 
 	if len(g.players) == 0 {
-		g.gameLoopTicker.Stop()
+		log.WithField("id", g.ID).Info("No players left in game, terminating game in ", conf.TerminateMinutes, " minutes")
 		g.isPaused = true
+		g.gameLoopTicker.Stop()
+		g.gameTerminateTimer.Reset(time.Duration(conf.TerminateMinutes) * time.Minute)
 	}
 
 	if g.humanPlayers > 0 && len(g.players) < g.minPlayers {
@@ -434,7 +445,10 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 
 		if !data.IsBot {
 			if g.isPaused {
+				log.Info("Resuming game ", g.ID, ", stopping termination timer")
 				g.gameLoopTicker.Reset(TICK_RATE)
+				g.gameTerminateTimer.Stop()
+				g.isPaused = false
 			}
 
 			g.humanPlayers++

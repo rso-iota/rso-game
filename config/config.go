@@ -20,6 +20,7 @@ type Config struct {
 	BotServiceURL    string `env:"BOT_SERVICE_URL"`
 	ExternalHttpPort string `env:"EXTERNAL_HTTP_PORT"`
 	InternalHttpPort string `env:"INTERNAL_HTTP_PORT"`
+	TerminateMinutes int    `env:"TERMINATE_MINUTES"`
 }
 
 func Init() Config {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"rso-game/bots"
 	"rso-game/circuitbreaker"
 	"rso-game/config"
 	"rso-game/game"
+	"rso-game/grpc"
 	"rso-game/nats"
 	"rso-game/server"
 )
@@ -16,8 +16,8 @@ func main() {
 	circuitbreaker.InitBreakers()
 
 	nats.Connect(conf.NatsURL)
-	bots.InitBotClient(conf.BotServiceURL)
 
+	grpc.InitBotClient(conf.BotServiceURL)
 	game.InitBackup(conf.BackupRedisUrl)
 	game.RestoreFromBackup()
 	game.EnsureGames(conf.NumTestGames)

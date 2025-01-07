@@ -1,14 +1,14 @@
 package circuitbreaker
 
 import (
-	pb "rso-game/grpc"
+	botPb "rso-game/grpc/bots"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/sony/gobreaker/v2"
 )
 
-var GrpcBreaker *gobreaker.CircuitBreaker[*pb.CreateBotResponse]
+var BotsBreaker *gobreaker.CircuitBreaker[*botPb.CreateBotResponse]
 var NatsBreaker *gobreaker.CircuitBreaker[interface{}]
 var RedisBreaker *gobreaker.CircuitBreaker[interface{}]
 
@@ -25,7 +25,7 @@ func onChange(name string, from gobreaker.State, to gobreaker.State) {
 }
 
 func InitBreakers() {
-	GrpcBreaker = gobreaker.NewCircuitBreaker[*pb.CreateBotResponse](gobreaker.Settings{
+	BotsBreaker = gobreaker.NewCircuitBreaker[*botPb.CreateBotResponse](gobreaker.Settings{
 		Name:          "grpcBreaker",
 		Timeout:       5 * time.Second,
 		OnStateChange: onChange,
