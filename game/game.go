@@ -253,7 +253,6 @@ func SendToReplays(key string, data GameState) {
 	if err != nil {
 		log.WithError(err).Error("Failed to encode game state")
 	}
-
 	nats_channel := "game_state." + key
 	nats.Publish(nats_channel, bytes.Bytes())
 }
