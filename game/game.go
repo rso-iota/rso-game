@@ -7,17 +7,20 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"rso-game/bots"
+	"rso-game/circuitbreaker"
 	"rso-game/config"
 	"rso-game/nats"
 	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"github.com/sony/gobreaker/v2"
 )
 
 var conf config.Config
 var PLAYER_SPEED = 150
 var NUM_FOOD = 150
+var TICK_RATE = 30 * time.Millisecond
 
 func SetGlobalConfig(c config.Config) {
 	conf = c
@@ -27,7 +30,7 @@ type Game struct {
 	ID string
 
 	humanPlayers  int
-	isPaused      bool
+	botPlayers    int
 	players       map[*Player]*PlayerData
 	playersToDel  []*Player
 	loadedPlayers []PlayerData
@@ -44,8 +47,10 @@ type Game struct {
 	previousTime time.Time
 	minPlayers   int
 
-	delta     float64
 	terminate bool
+
+	gameLoopTicker *time.Ticker
+	isPaused       bool
 }
 
 type PlayerMessage struct {
@@ -90,20 +95,22 @@ func (l *Circle) addArea(radius float32) {
 var runningGames = make(map[string]*Game)
 
 func (g *Game) manageBots() {
-	if len(g.players) < g.minPlayers {
-		botsNeeded := g.minPlayers - len(g.players)
-		for i := 0; i < botsNeeded; i++ {
-			token := uuid.New().String()
-			botName := "bot-" + token[:4]
+	if circuitbreaker.GrpcBreaker.State() == gobreaker.StateOpen {
+		return
+	}
 
-			log.Info("Requesting a new bot ", botName, " for game ", g.ID)
-			err := bots.CreateBot(g.ID, botName, token, "medium")
-			if err != nil {
-				log.WithError(err).Warn("Failed to create bot, skipping bot management")
-				return // Skip further bot creation attempts if we encounter an error
-			}
-			g.botTokens[token] = botName
+	botsNeeded := g.minPlayers - len(g.players)
+	for i := 0; i < botsNeeded; i++ {
+		token := uuid.New().String()
+		botName := "bot-" + token[:4]
+
+		log.Info("Requesting a new bot ", botName, " for game ", g.ID)
+		err := bots.CreateBot(g.ID, botName, token, "medium")
+		if err != nil {
+			log.WithError(err).Warn("Failed to create bot, skipping bot management")
+			return // Skip further bot creation attempts if we encounter an error
 		}
+		g.botTokens[token] = botName
 	}
 }
 
@@ -124,12 +131,8 @@ func (g *Game) Terminate() {
 }
 
 func (g *Game) Run() {
-	g.manageBots()
-	gameLoopTicker := time.NewTicker(30 * time.Millisecond)
-	defer gameLoopTicker.Stop()
-
-	botCheckTicker := time.NewTicker(5 * time.Second)
-	defer botCheckTicker.Stop()
+	g.gameLoopTicker = time.NewTicker(TICK_RATE)
+	defer g.gameLoopTicker.Stop()
 
 	backupTicker := time.NewTicker(5 * time.Second)
 	defer backupTicker.Stop()
@@ -161,24 +164,16 @@ func (g *Game) Run() {
 				if !p.IsBot {
 					g.humanPlayers--
 					log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
-				}
-
-				if g.humanPlayers <= 0 {
-					log.Info("No human players left in game ", g.ID, ", pausing game")
+				} else {
+					g.botPlayers--
 				}
 
 				g.broadcast(playerLeftMsg)
 			}
 		case message := <-g.messages_in:
 			g.handleMessage(message)
-		case <-botCheckTicker.C:
-			g.manageBots()
-		case time := <-gameLoopTicker.C:
-			g.delta = time.Sub(g.previousTime).Seconds()
-			g.previousTime = time
-			if !g.isPaused {
-				g.loop()
-			}
+		case time := <-g.gameLoopTicker.C:
+			g.loop(time)
 			if g.terminate {
 				g.Terminate()
 				return
@@ -197,8 +192,23 @@ func (g *Game) GetGameState() GameState {
 	}
 }
 
-func (g *Game) loop() {
-	g.isPaused = g.humanPlayers <= 0
+func (g *Game) loop(time time.Time) {
+	delta := time.Sub(g.previousTime).Seconds()
+	g.previousTime = time
+
+	if g.humanPlayers <= 0 && g.botPlayers > 0 {
+		log.WithField("id", g.ID).Info("No human players in game ", g.ID, ", removing bots and pausing game")
+		go g.disconnectBots(g.botPlayers)
+	}
+
+	if len(g.players) == 0 {
+		g.gameLoopTicker.Stop()
+		g.isPaused = true
+	}
+
+	if g.humanPlayers > 0 && len(g.players) < g.minPlayers {
+		g.manageBots()
+	}
 
 	for _, player := range g.playersToDel {
 		delete(g.players, player)
@@ -218,8 +228,8 @@ func (g *Game) loop() {
 		if magnitude == 0 {
 			continue
 		}
-		playerData.Circle.X += move.X * float32(g.delta) * float32(PLAYER_SPEED) / float32(magnitude)
-		playerData.Circle.Y += move.Y * float32(g.delta) * float32(PLAYER_SPEED) / float32(magnitude)
+		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
+		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
 
 		updatedPlayers = append(updatedPlayers, *playerData)
 	}
@@ -304,6 +314,20 @@ func (g *Game) loop() {
 		}
 
 		g.broadcast(state)
+	}
+}
+
+func (g *Game) disconnectBots(n int) {
+	i := 0
+	for player, playerData := range g.players {
+		if i >= n {
+			break
+		}
+
+		if playerData.IsBot {
+			g.disconnect <- player
+			i++
+		}
 	}
 }
 
@@ -409,13 +433,14 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 		}
 
 		if !data.IsBot {
-			if g.humanPlayers == 0 {
-				log.Info("Human player joined game ", g.ID, ", resuming game")
-				g.isPaused = false
+			if g.isPaused {
+				g.gameLoopTicker.Reset(TICK_RATE)
 			}
 
 			g.humanPlayers++
 			log.Info("There are now ", g.humanPlayers, " human players in game ", g.ID)
+		} else {
+			g.botPlayers++
 		}
 
 		g.players[playerMessage.Player] = data
@@ -464,7 +489,6 @@ func (g *Game) onlinePlayers() []PlayerData {
 func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
 	game := Game{
 		ID:            id,
-		humanPlayers:  0,
 		players:       make(map[*Player]*PlayerData),
 		loadedPlayers: players,
 		food:          food,
