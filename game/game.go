@@ -22,7 +22,7 @@ import (
 )
 
 var conf config.Config
-var PLAYER_SPEED = 150
+var PLAYER_SPEED = 500
 var NUM_FOOD = 150
 var TICK_RATE = 30 * time.Millisecond
 
@@ -151,6 +151,9 @@ func (g *Game) Run() {
 	backupTicker := time.NewTicker(5 * time.Second)
 	defer backupTicker.Stop()
 
+	manageBotsTicker := time.NewTicker(1 * time.Second)
+	defer manageBotsTicker.Stop()
+
 	for {
 		select {
 		case player := <-g.connect:
@@ -191,6 +194,10 @@ func (g *Game) Run() {
 			if g.terminate {
 				g.Terminate()
 			}
+		case <-manageBotsTicker.C:
+			if !g.isPaused {
+				g.manageBots()
+			}
 		case <-backupTicker.C:
 			state := g.GetGameState()
 			SaveToBackup(g.ID, state)
@@ -223,10 +230,6 @@ func (g *Game) loop(t time.Time) {
 		g.gameTerminateTimer.Reset(time.Duration(conf.TerminateMinutes) * time.Minute)
 	}
 
-	if g.humanPlayers.Load() > 0 && len(g.players) < g.minPlayers {
-		g.manageBots()
-	}
-
 	for _, player := range g.playersToDel {
 		delete(g.players, player)
 		close(player.send)
@@ -245,8 +248,11 @@ func (g *Game) loop(t time.Time) {
 		if magnitude == 0 {
 			continue
 		}
-		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
-		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude)
+
+		slow := float32(2.0 / math.Sqrt(float64(playerData.Circle.Radius)))
+
+		playerData.Circle.X += move.X * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude) * slow
+		playerData.Circle.Y += move.Y * float32(delta) * float32(PLAYER_SPEED) / float32(magnitude) * slow
 
 		updatedPlayers = append(updatedPlayers, *playerData)
 	}
@@ -457,10 +463,7 @@ func (g *Game) handleMessage(playerMessage PlayerMessage) {
 				g.isPaused = false
 			}
 
-			g.humanPlayers.Add(1)
 			log.Info("There are now ", g.humanPlayers.Load(), " human players in game ", g.ID)
-		} else {
-			g.botPlayers.Add(1)
 		}
 
 		g.players[playerMessage.Player] = data
@@ -690,8 +693,8 @@ func IsBot(game *Game, token string) (bool, PlayerInfo) {
 
 func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
-	game, ok := runningGames[gameID]
-	if !ok {
+	game, err := getGame(gameID)
+	if err != nil {
 		log.Error("Game not found")
 		http.Error(w, "Game not found", http.StatusNotFound)
 		return
@@ -701,6 +704,7 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 
 	bot, botInfo := IsBot(game, token)
 	if bot {
+		game.botPlayers.Add(1)
 		log.Info("Bot ", botInfo.Username, " connected to game ", gameID)
 		serveWebSocket(botInfo, game, w, r)
 		return
@@ -717,6 +721,7 @@ func HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 		playerInfo = data
 
 	}
+	game.humanPlayers.Add(1)
 	log.Info("Player connected to game", playerInfo)
 
 	serveWebSocket(playerInfo, game, w, r)
