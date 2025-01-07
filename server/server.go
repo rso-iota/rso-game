@@ -94,6 +94,7 @@ func deleteGameHandler(w http.ResponseWriter, r *http.Request) {
 	gameID := r.URL.Query().Get("id")
 	err := game.DeleteGame(gameID)
 	if err != nil {
+		log.WithError(err).Error("Failed to delete game over HTTP")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

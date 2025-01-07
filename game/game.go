@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"rso-game/bots"
 	"rso-game/config"
 	"rso-game/nats"
 	"time"
@@ -41,7 +42,6 @@ type Game struct {
 	moveMessages map[*Player]MoveMessage
 
 	previousTime time.Time
-	botClient    *BotClient
 	minPlayers   int
 
 	delta     float64
@@ -90,15 +90,6 @@ func (l *Circle) addArea(radius float32) {
 var runningGames = make(map[string]*Game)
 
 func (g *Game) manageBots() {
-	if g.botClient == nil {
-		return
-	}
-
-	// Only try to add bots if we have a minimum player requirement
-	if g.minPlayers <= 0 {
-		return
-	}
-
 	if len(g.players) < g.minPlayers {
 		botsNeeded := g.minPlayers - len(g.players)
 		for i := 0; i < botsNeeded; i++ {
@@ -106,7 +97,7 @@ func (g *Game) manageBots() {
 			botName := "bot-" + token[:4]
 
 			log.Info("Requesting a new bot ", botName, " for game ", g.ID)
-			_, err := g.botClient.CreateBot(g.ID, botName, token, "medium")
+			err := bots.CreateBot(g.ID, botName, token, "medium")
 			if err != nil {
 				log.WithError(err).Warn("Failed to create bot, skipping bot management")
 				return // Skip further bot creation attempts if we encounter an error
@@ -134,7 +125,7 @@ func (g *Game) Terminate() {
 
 func (g *Game) Run() {
 	g.manageBots()
-	gameLoopTicker := time.NewTicker(50 * time.Millisecond)
+	gameLoopTicker := time.NewTicker(30 * time.Millisecond)
 	defer gameLoopTicker.Stop()
 
 	botCheckTicker := time.NewTicker(5 * time.Second)
@@ -470,7 +461,7 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *BotClient, minPlayers int) Game {
+func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
 	game := Game{
 		ID:            id,
 		humanPlayers:  0,
@@ -482,8 +473,7 @@ func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *B
 		messages_in:   make(chan PlayerMessage),
 		moveMessages:  make(map[*Player]MoveMessage),
 		previousTime:  time.Now(),
-		botClient:     botClient,
-		minPlayers:    minPlayers,
+		minPlayers:    conf.MinPlayers,
 		botTokens:     make(map[string]string),
 	}
 
@@ -493,24 +483,8 @@ func CreateGameStruct(id string, players []PlayerData, food []Food, botClient *B
 func RestoreFromBackup() {
 	games := LoadBackup()
 
-	var botClient *BotClient
-	var minPlayers int
-
 	for id, state := range games {
-		// Only try to set up bot client if bot service URL is configured
-		if conf.BotServiceURL != "" {
-			var err error
-			botClient, err = NewBotClient(conf.BotServiceURL)
-			if err != nil {
-				log.WithError(err).Info("Bot service unavailable, game will run without bots")
-			} else {
-				// Only set minPlayers if we successfully connected to the bot service
-				minPlayers = conf.MinPlayers
-				log.Info("Bot service available, will run with bots")
-			}
-		}
-
-		game := CreateGameStruct(id, state.Players, state.Food, botClient, minPlayers)
+		game := CreateGameStruct(id, state.Players, state.Food)
 		runningGames[id] = &game
 		go game.Run()
 		log.WithField("id", id).Info("Restored game from backup")
@@ -564,23 +538,7 @@ func CreateGame() string {
 		}
 	}
 
-	var botClient *BotClient
-	var minPlayers int
-
-	// Only try to set up bot client if bot service URL is configured
-	if conf.BotServiceURL != "" {
-		var err error
-		botClient, err = NewBotClient(conf.BotServiceURL)
-		if err != nil {
-			log.WithError(err).Info("Bot service unavailable, game will run without bots")
-		} else {
-			// Only set minPlayers if we successfully connected to the bot service
-			minPlayers = conf.MinPlayers
-			log.Info("Bot service available, will run with bots")
-		}
-	}
-
-	game := CreateGameStruct(id, []PlayerData{}, food, botClient, minPlayers)
+	game := CreateGameStruct(id, []PlayerData{}, food)
 	runningGames[id] = &game
 
 	go game.Run()

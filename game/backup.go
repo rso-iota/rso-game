@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"os"
+	"rso-game/circuitbreaker"
 
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -54,14 +55,14 @@ func FromBytes(data []byte) GameState {
 }
 
 func SaveToBackup(key string, data GameState) {
-	err := client.Set(ctx, hostname+":"+key, ToBytes(data), 0).Err()
+	err := breakerSetState(hostname+":"+key, ToBytes(data))
 	if err != nil {
 		log.WithError(err).Error("Failed to save game state")
 	}
 }
 
 func LoadBackup() map[string]GameState {
-	keys, err := client.Keys(ctx, hostname+":*").Result()
+	keys, err := breakerGetKeys(hostname + ":*")
 	if err != nil {
 		log.WithError(err).Error("Failed to get keys")
 	}
@@ -69,7 +70,7 @@ func LoadBackup() map[string]GameState {
 	games := make(map[string]GameState)
 
 	for _, key := range keys {
-		bytes, err := client.Get(ctx, key).Result()
+		bytes, err := breakerGetState(key)
 		if err != nil {
 			log.WithError(err).Error("Failed to get game state")
 		}
@@ -83,8 +84,72 @@ func LoadBackup() map[string]GameState {
 
 func DeleteBackup(key string) {
 	log.Info("Deleting backup for game ", key)
-	err := client.Del(ctx, hostname+":"+key).Err()
+	err := breakerDeleteBackup(hostname + ":" + key)
 	if err != nil {
 		log.WithError(err).Error("Failed to delete game state")
 	}
+}
+
+func breakerGetKeys(pattern string) ([]string, error) {
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	keys, err := circuitbreaker.RedisBreaker.Execute(func() (interface{}, error) {
+		keys, err := client.Keys(ctx, pattern).Result()
+		return keys, err
+	})
+
+	return keys.([]string), err
+}
+
+func breakerSetState(key string, state []byte) error {
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	_, err := circuitbreaker.RedisBreaker.Execute(func() (interface{}, error) {
+		err := client.Set(ctx, key, state, 0).Err()
+		return nil, err
+	})
+
+	return err
+}
+
+func breakerDeleteBackup(key string) error {
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	_, err := circuitbreaker.RedisBreaker.Execute(func() (interface{}, error) {
+		err := client.Del(ctx, key).Err()
+		return nil, err
+	})
+
+	return err
+}
+
+func breakerGetState(key string) (string, error) {
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	state, err := circuitbreaker.RedisBreaker.Execute(func() (interface{}, error) {
+		state, err := client.Get(ctx, key).Result()
+		return state, err
+	})
+
+	return state.(string), err
 }
