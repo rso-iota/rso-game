@@ -18,6 +18,8 @@ func main() {
 	nats.Connect(conf.NatsURL)
 
 	grpc.InitBotClient(conf.BotServiceURL)
+	grpc.InitLobbyClient(conf.LobbyServiceURL)
+
 	game.InitBackup(conf.BackupRedisUrl)
 	game.RestoreFromBackup()
 	game.EnsureGames(conf.NumTestGames)

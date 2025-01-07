@@ -21,7 +21,7 @@ type LobbyClient struct {
 var lobbyClient *LobbyClient
 var lobbyUrl string
 
-func InitBotLobby(address string) {
+func InitLobbyClient(address string) {
 	lobbyUrl = address
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

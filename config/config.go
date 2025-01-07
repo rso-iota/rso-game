@@ -21,6 +21,7 @@ type Config struct {
 	ExternalHttpPort string `env:"EXTERNAL_HTTP_PORT"`
 	InternalHttpPort string `env:"INTERNAL_HTTP_PORT"`
 	TerminateMinutes int    `env:"TERMINATE_MINUTES"`
+	LobbyServiceURL  string `env:"LOBBY_SERVICE_URL"`
 }
 
 func Init() Config {

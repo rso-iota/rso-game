@@ -12,6 +12,7 @@ import (
 	___ "rso-game/grpc/lobby"
 	"rso-game/nats"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -97,6 +98,7 @@ func (l *Circle) addArea(radius float32) {
 }
 
 var runningGames = make(map[string]*Game)
+var runningGamesLock sync.RWMutex
 
 func (g *Game) manageBots() {
 	if circuitbreaker.BotsBreaker.State() == gobreaker.StateOpen {
@@ -133,7 +135,7 @@ func (g *Game) Terminate() {
 
 	grpc.NotifyGameDeleted(g.ID, ___.EndGameReason_INACTIVITY)
 
-	delete(runningGames, g.ID)
+	deleteRunningGame(g.ID)
 	log.Info("Game ", g.ID, " stopped")
 
 	runtime.Goexit()
@@ -504,8 +506,32 @@ func (g *Game) onlinePlayers() []PlayerData {
 	return players
 }
 
-func CreateGameStruct(id string, players []PlayerData, food []Food) Game {
-	game := Game{
+func addRunningGame(game *Game) {
+	runningGamesLock.Lock()
+	runningGames[game.ID] = game
+	runningGamesLock.Unlock()
+}
+
+func deleteRunningGame(id string) {
+	runningGamesLock.Lock()
+	delete(runningGames, id)
+	runningGamesLock.Unlock()
+}
+
+func getGame(id string) (*Game, error) {
+	runningGamesLock.RLock()
+	defer runningGamesLock.RUnlock()
+
+	game, ok := runningGames[id]
+	if !ok {
+		return nil, errors.New("Game not found")
+	}
+
+	return game, nil
+}
+
+func CreateGameStruct(id string, players []PlayerData, food []Food) *Game {
+	game := &Game{
 		ID:            id,
 		players:       make(map[*Player]*PlayerData),
 		loadedPlayers: players,
@@ -527,20 +553,21 @@ func RestoreFromBackup() {
 
 	for id, state := range games {
 		game := CreateGameStruct(id, state.Players, state.Food)
-		runningGames[id] = &game
 		go game.Run()
+
+		addRunningGame(game)
 		log.WithField("id", id).Info("Restored game from backup")
 	}
 }
 
 func DeleteGame(id string) error {
-	game, ok := runningGames[id]
-	if !ok {
-		return errors.New("Game not found")
+	game, err := getGame(id)
+	if err != nil {
+		return err
 	}
 
 	game.Stop()
-	delete(runningGames, id)
+	deleteRunningGame(id)
 	log.Printf("Deleted game %s. There are now %d running games", id, len(runningGames))
 
 	return nil
@@ -581,9 +608,9 @@ func CreateGame() string {
 	}
 
 	game := CreateGameStruct(id, []PlayerData{}, food)
-	runningGames[id] = &game
 
 	go game.Run()
+	addRunningGame(game)
 	log.Printf("Creating new game %s. There are now %d running games", id, len(runningGames))
 
 	return id
