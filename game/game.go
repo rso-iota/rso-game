@@ -1,8 +1,6 @@
 package game
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"math"
@@ -245,16 +243,14 @@ func SendToReplays(key string, data GameState) {
 		Type: "gameState",
 		Data: data,
 	}
-
-	var bytes bytes.Buffer
-	enc := gob.NewEncoder(&bytes)
-
-	err := enc.Encode(state)
+	stateBytes, err := json.Marshal(state)
 	if err != nil {
-		log.WithError(err).Error("Failed to encode game state")
+		log.WithError(err).Error("Failed to marshal game state")
+		return
 	}
+
 	nats_channel := "game_state." + key
-	nats.Publish(nats_channel, bytes.Bytes())
+	nats.Publish(nats_channel, stateBytes)
 }
 
 func (g *Game) GetGameState() GameState {
