@@ -151,8 +151,8 @@ func (g *Game) Run() {
 	backupTicker := time.NewTicker(5 * time.Second)
 	defer backupTicker.Stop()
 
-	manageBotsTicker := time.NewTicker(1 * time.Second)
-	defer manageBotsTicker.Stop()
+	maintenanceTicker := time.NewTicker(2 * time.Second)
+	defer maintenanceTicker.Stop()
 
 	for {
 		select {
@@ -194,7 +194,7 @@ func (g *Game) Run() {
 			if g.terminate {
 				g.Terminate()
 			}
-		case <-manageBotsTicker.C:
+		case <-maintenanceTicker.C:
 			if !g.isPaused {
 				g.manageBots()
 			}
