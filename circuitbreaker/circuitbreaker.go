@@ -2,6 +2,7 @@ package circuitbreaker
 
 import (
 	botPb "rso-game/grpc/bots"
+	lobbyPb "rso-game/grpc/lobby"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -9,6 +10,7 @@ import (
 )
 
 var BotsBreaker *gobreaker.CircuitBreaker[*botPb.CreateBotResponse]
+var LobbyBreaker *gobreaker.CircuitBreaker[*lobbyPb.GameID]
 var NatsBreaker *gobreaker.CircuitBreaker[interface{}]
 var RedisBreaker *gobreaker.CircuitBreaker[interface{}]
 
@@ -39,6 +41,12 @@ func InitBreakers() {
 
 	RedisBreaker = gobreaker.NewCircuitBreaker[interface{}](gobreaker.Settings{
 		Name:          "redisBreaker",
+		Timeout:       5 * time.Second,
+		OnStateChange: onChange,
+	})
+
+	LobbyBreaker = gobreaker.NewCircuitBreaker[*lobbyPb.GameID](gobreaker.Settings{
+		Name:          "lobbyBreaker",
 		Timeout:       5 * time.Second,
 		OnStateChange: onChange,
 	})

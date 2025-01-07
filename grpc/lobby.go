@@ -1,11 +1,15 @@
 package grpc
 
 import (
+	"context"
+	"rso-game/circuitbreaker"
 	pb "rso-game/grpc/lobby"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -33,6 +37,46 @@ func InitBotLobby(address string) {
 	log.Info("Connected to bot service at ", address)
 }
 
-func Temp(gameID string, botID string, token string, difficulty string) error {
-	return nil
+func NotifyGameDeleted(gameID string, reson pb.EndGameReason) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	req := &pb.EndGameRequest{
+		Id: &pb.GameID{
+			Id: gameID,
+		},
+		Reason: reson,
+	}
+
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	_, err := circuitbreaker.LobbyBreaker.Execute(func() (*pb.GameID, error) {
+		if botClient.conn == nil || botClient.conn.GetState() == connectivity.Shutdown {
+			log.Info("Trying to reconnect to bot service")
+			conn, err := grpc.NewClient(lobbyUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return nil, err
+			}
+
+			client := pb.NewLobbyServiceClient(conn)
+			lobbyClient = &LobbyClient{
+				client: client,
+				conn:   conn,
+			}
+			log.Info("Reconnected to bot service")
+		}
+
+		resp, err := lobbyClient.client.DeleteGame(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	})
+
+	return err
 }

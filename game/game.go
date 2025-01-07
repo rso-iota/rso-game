@@ -9,6 +9,7 @@ import (
 	"rso-game/circuitbreaker"
 	"rso-game/config"
 	"rso-game/grpc"
+	___ "rso-game/grpc/lobby"
 	"rso-game/nats"
 	"runtime"
 	"time"
@@ -128,6 +129,8 @@ func (g *Game) Terminate() {
 
 	g.broadcast(closeMessage)
 	DeleteBackup(g.ID)
+
+	grpc.NotifyGameDeleted(g.ID, ___.EndGameReason_INACTIVITY)
 
 	delete(runningGames, g.ID)
 	log.Info("Game ", g.ID, " stopped")
