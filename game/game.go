@@ -120,6 +120,25 @@ func (g *Game) manageBots() {
 	}
 }
 
+func (g *Game) informLobby() {
+	if circuitbreaker.LobbyBreaker.State() == gobreaker.StateOpen {
+		return
+	}
+
+	players := make([]*___.Player, 0, len(g.players))
+	for _, player := range g.players {
+		players = append(players, &___.Player{
+			Username: player.PlayerName,
+			Size:     player.Circle.Radius,
+		})
+	}
+
+	err := grpc.NotifyLiveData(g.ID, players)
+	if err != nil {
+		log.WithError(err).Warn("Failed to notify lobby about game state")
+	}
+}
+
 func (g *Game) Stop() {
 	g.terminate = true
 }
@@ -197,6 +216,7 @@ func (g *Game) Run() {
 		case <-maintenanceTicker.C:
 			if !g.isPaused {
 				g.manageBots()
+				g.informLobby()
 			}
 		case <-backupTicker.C:
 			state := g.GetGameState()

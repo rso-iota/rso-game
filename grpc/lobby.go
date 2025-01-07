@@ -37,6 +37,23 @@ func InitLobbyClient(address string) {
 	log.Info("Connected to bot service at ", address)
 }
 
+func tryReconnect() error {
+	log.Info("Trying to reconnect to bot service")
+	conn, err := grpc.NewClient(lobbyUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+
+	client := pb.NewLobbyServiceClient(conn)
+	lobbyClient = &LobbyClient{
+		client: client,
+		conn:   conn,
+	}
+	log.Info("Reconnected to bot service")
+
+	return nil
+}
+
 func NotifyGameDeleted(gameID string, reson pb.EndGameReason) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -57,21 +74,51 @@ func NotifyGameDeleted(gameID string, reson pb.EndGameReason) error {
 
 	_, err := circuitbreaker.LobbyBreaker.Execute(func() (*pb.GameID, error) {
 		if botClient.conn == nil || botClient.conn.GetState() == connectivity.Shutdown {
-			log.Info("Trying to reconnect to bot service")
-			conn, err := grpc.NewClient(lobbyUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			err := tryReconnect()
 			if err != nil {
 				return nil, err
 			}
-
-			client := pb.NewLobbyServiceClient(conn)
-			lobbyClient = &LobbyClient{
-				client: client,
-				conn:   conn,
-			}
-			log.Info("Reconnected to bot service")
 		}
 
 		resp, err := lobbyClient.client.DeleteGame(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	})
+
+	return err
+}
+
+func NotifyLiveData(gameID string, players []*pb.Player) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	req := &pb.LiveDataRequest{
+		Id: &pb.GameID{
+			Id: gameID,
+		},
+		Players: players,
+	}
+
+	defer func() error {
+		if r := recover(); r != nil {
+			return r.(error)
+		}
+		return nil
+	}()
+
+	_, err := circuitbreaker.LobbyBreaker.Execute(func() (*pb.GameID, error) {
+		if botClient.conn == nil || botClient.conn.GetState() == connectivity.Shutdown {
+			if botClient.conn == nil || botClient.conn.GetState() == connectivity.Shutdown {
+				err := tryReconnect()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		resp, err := lobbyClient.client.UpdateLiveData(ctx, req)
 		if err != nil {
 			return nil, err
 		}
