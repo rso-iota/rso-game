@@ -1,6 +1,8 @@
 package game
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"math"
@@ -221,14 +223,18 @@ func (g *Game) Run() {
 				g.informLobby()
 			}
 		case <-backupTicker.C:
-			state := g.GetGameState()
-			SaveToBackup(g.ID, state)
+			if !g.isPaused {
+				state := g.GetGameState()
+				SaveToBackup(g.ID, state)
+			}
+		case <-replayTicker.C:
+			if !g.isPaused {
+				state := g.GetGameState()
+				SendToReplays(g.ID, state)
+			}
 		case <-g.gameTerminateTimer.C:
 			log.WithField("id", g.ID).Info("Terminating game due to inactivity")
 			g.Terminate()
-		case <-replayTicker.C:
-			state := g.GetGameState()
-			SendToReplays(g.ID, state)
 		}
 
 	}
@@ -239,14 +245,17 @@ func SendToReplays(key string, data GameState) {
 		Type: "gameState",
 		Data: data,
 	}
-	stateBytes, err := json.Marshal(state)
+
+	var bytes bytes.Buffer
+	enc := gob.NewEncoder(&bytes)
+
+	err := enc.Encode(state)
 	if err != nil {
-		log.WithError(err).Error("Error marshalling game state")
-		return
+		log.WithError(err).Error("Failed to encode game state")
 	}
-	log.Info("Publishing game state to NATS")
+
 	nats_channel := "game_state." + key
-	nats.Publish(nats_channel, stateBytes)
+	nats.Publish(nats_channel, bytes.Bytes())
 }
 
 func (g *Game) GetGameState() GameState {
