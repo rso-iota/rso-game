@@ -172,6 +172,8 @@ func (g *Game) Run() {
 
 	maintenanceTicker := time.NewTicker(2 * time.Second)
 	defer maintenanceTicker.Stop()
+	replayTicker := time.NewTicker(500 * time.Millisecond)
+	defer replayTicker.Stop()
 
 	for {
 		select {
@@ -224,8 +226,27 @@ func (g *Game) Run() {
 		case <-g.gameTerminateTimer.C:
 			log.WithField("id", g.ID).Info("Terminating game due to inactivity")
 			g.Terminate()
+		case <-replayTicker.C:
+			state := g.GetGameState()
+			SendToReplays(g.ID, state)
 		}
+
 	}
+}
+
+func SendToReplays(key string, data GameState) {
+	state := GameStateMessage{
+		Type: "gameState",
+		Data: data,
+	}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		log.WithError(err).Error("Error marshalling game state")
+		return
+	}
+	log.Info("Publishing game state to NATS")
+	nats_channel := "game_state." + key
+	nats.Publish(nats_channel, stateBytes)
 }
 
 func (g *Game) GetGameState() GameState {
