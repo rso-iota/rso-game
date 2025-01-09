@@ -25,6 +25,7 @@ func serveExternalHTTP(l net.Listener, config config.Config) {
 	if config.TestServer {
 		log.Debug("Running in test mode, serving static files")
 		mux.HandleFunc("/script.js", serveScript)
+		mux.HandleFunc("/list", gameListHandler)
 		mux.HandleFunc("/", serveStaticPage)
 	}
 

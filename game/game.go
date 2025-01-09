@@ -118,6 +118,11 @@ func (g *Game) manageBots() {
 		}
 		g.botTokens[token] = botName
 	}
+
+	if botsNeeded < 0 {
+		log.Info("Disconnecting ", -botsNeeded, " bots from game ", g.ID)
+		go g.disconnectBots(-botsNeeded)
+	}
 }
 
 func (g *Game) informLobby() {
@@ -407,13 +412,7 @@ func (g *Game) broadcast(message interface{}) {
 	}
 
 	for player := range g.players {
-		select {
-		case player.send <- bytes:
-			// Message sent successfully
-		default:
-			// Channel is full, skip this message
-			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
-		}
+		player.send <- bytes
 	}
 }
 
@@ -424,13 +423,7 @@ func (g *Game) sendTo(player *Player, message interface{}) {
 		return
 	}
 
-	select {
-	case player.send <- bytes:
-		// Message sent successfully
-	default:
-		// Channel is full, skip this message
-		log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
-	}
+	player.send <- bytes
 }
 
 func (g *Game) broadcastExcept(message interface{}, except *Player) {
@@ -444,13 +437,7 @@ func (g *Game) broadcastExcept(message interface{}, except *Player) {
 		if player == except {
 			continue
 		}
-		select {
-		case player.send <- bytes:
-			// Message sent successfully
-		default:
-			// Channel is full, skip this message
-			log.WithField("player", g.players[player].PlayerName).Warn("Skipping message - send channel full")
-		}
+		player.send <- bytes
 	}
 }
 
