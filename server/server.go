@@ -25,8 +25,6 @@ func serveExternalHTTP(l net.Listener, config config.Config) {
 	if config.TestServer {
 		log.Debug("Running in test mode, serving static files")
 		mux.HandleFunc("/script.js", serveScript)
-		mux.HandleFunc("/list", gameListHandler)
-		mux.HandleFunc("/new", newGameHandler)
 		mux.HandleFunc("/", serveStaticPage)
 	}
 
@@ -79,13 +77,13 @@ func serveScript(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "public/script.js")
 }
 
-func newGameHandler(w http.ResponseWriter, r *http.Request) {
+func newGameHandler(w http.ResponseWriter, _ *http.Request) {
 	id := game.CreateGame()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"id": id, "serverId": podID})
 }
 
-func gameListHandler(w http.ResponseWriter, r *http.Request) {
+func gameListHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(game.RunningGameIDs())
 }

@@ -7,16 +7,35 @@ Main service for handling game logic and state.
 See `defaults.env` for default configuration values.
 Environment variables will override the defaults.
 
+Explanation of configuration values:
+- `INTERNAL_HTTP_PORT`: Port on which the internal HTTP server will listen
+- `EXTERNAL_HTTP_PORT`: Port on which the external HTTP server will listen
+- `TEST_SERVER`: If set to `true`, the service will serve a testing webpage on port `EXTERNAL_HTTP_PORT`
+- `NUM_TEST_GAMES`: Number of test games to create on startup
+- `LOG_JSON`: If set to `true`, logs will be in JSON format
+- `NATS_URL`: URL of the NATS server
+- `AUTH_EP`: URL of the authentication service
+- `REQUIRE_AUTH`: If set to `true`, the players will have to authenticate before joining a game
+- `BACKUP_REDIS_URL`: URL of the Redis server used for backup
+- `BOT_SERVICE_URL`: URL of the bot service
+- `MIN_PLAYERS`: Minimum number of players, if there are less players than this number, the service will ask for bots to join
+- `TERMINATE_MINUTES`: Number of minutes after which the game will be terminated if there are no players
+
 ## API
 
-When `GAME_TEST_SERVER` is set to `true`, the service will serve a testing webpage and also have endpoints `/new` and `/list` for creating and listing games. Both endpoins are GET and take no parameters.
+To connect to WebSocket, use the `:EXTERNAL_HTTP_PORT/connect/{gameID}` endpoint.
+When `TEST_SERVER` is set to `true`, the service will serve a testing webpage on port `EXTERNAL_HTTP_PORT`.
 
-Regardless of the value of `GAME_TEST_SERVER`, the service always has one HTTP endpoint, `/game/{gameID}`, which is a WebSocket endpoint.
+There is a single endpoint on the internal HTTP server: `:INTERNAL_HTTP_PORT/game`
+This endpoint has 3 methods: `GET`, `POST`, and `DELETE`.
+- `GET` will return a list of all games (no parameters needed)
+- `POST` will create a new game (no parameters needed)
+- `DELETE` will delete a game (query parameter `id` is required)
 
 
-### Connecting to a game
+## Connecting to a game
 
-Create a new WebSocket connection to `/game/{gameID}` where `{gameID}` is the ID of the game you want to connect to (all IDs are listed on the `/list` endpoint).
+Create a new WebSocket connection to `/connect/{gameID}` where `{gameID}` is the ID of the game you want to connect to (all IDs are listed on the `/list` endpoint).
 
 On connection, send the following JSON object:
 
@@ -37,7 +56,7 @@ In response, you will receive a JSON object with the current game state:
   "data":{
     "players":[
       {
-        "name":"PLAYER_NAME",
+        "nameName":"PLAYER_NAME",
         "alive":true,
         "circle":{
           "x":100,
@@ -66,7 +85,7 @@ All other players will receive a message that a new player has joined:
 {
   "type":"spawn",
   "data":{
-    "name":"PLAYER_NAME",
+    "nameName":"PLAYER_NAME",
     "alive":true,
     "circle":{
       "x":100,
@@ -123,7 +142,3 @@ To move, send the following JSON object:
   }
 }
 ```
-
-## gRPC
-
-The service also has a gRPC endpoint for creating and listing games. These endpoints are always available, regardless of the value of `GAME_TEST_SERVER`. See the [proto file](rso-comms/game.proto) for more information.
